@@ -13,8 +13,15 @@ import (
 type Meal struct {
     UserID int    `json:"user_id"`
     Date   string `json:"date"`
-    Lunch  bool   `json:"lunch"`
-    Dinner bool   `json:"dinner"`
+    Lunch  string `json:"lunch"`
+    Dinner string `json:"dinner"`
+}
+
+type MealUpdate struct {
+    UserID int    `json:"user_id"`
+    Date   string `json:"date"`
+    Lunch  int    `json:"lunch"`
+    Dinner int    `json:"dinner"`
 }
 
 var db *sql.DB
@@ -28,7 +35,19 @@ func healthCheck(c *gin.Context) {
 }
 
 func getMeals(c *gin.Context) {
-    query := "SELECT user_id, date, lunch, dinner FROM meals"
+//    query := "SELECT user_id, date, lunch, dinner FROM meals"
+	query := `
+    SELECT 
+        m.user_id, 
+        m.date, 
+        lunch_trans.name AS lunch, 
+        dinner_trans.name AS dinner
+    FROM meals m
+    LEFT JOIN meal_option_translations lunch_trans 
+        ON m.lunch = lunch_trans.meal_option_id AND lunch_trans.language_code = 'ja'
+    LEFT JOIN meal_option_translations dinner_trans 
+        ON m.dinner = dinner_trans.meal_option_id AND dinner_trans.language_code = 'ja'
+    `
     log.Printf("Executing SQL: %s", query)
 
     rows, err := db.Query(query)
@@ -57,7 +76,7 @@ func getMeals(c *gin.Context) {
 }
 
 func updateMeal(c *gin.Context) {
-    var m Meal
+    var m MealUpdate
     if err := c.ShouldBindJSON(&m); err != nil {
         c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
         return

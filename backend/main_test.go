@@ -47,10 +47,21 @@ func TestGetMeals(t *testing.T) {
 	db = mockDB
 
 	rows := sqlmock.NewRows([]string{"user_id", "date", "lunch", "dinner"}).
-		AddRow(1, "2024-02-04T00:00:00Z", true, true).
-		AddRow(2, "2024-02-04T00:00:00Z", false, true)
+		AddRow(1, "2024-02-04T00:00:00Z", "弁当","家").
+		AddRow(2, "2024-02-04T00:00:00Z", "なし","弁当")
 
-	mock.ExpectQuery("SELECT user_id, date, lunch, dinner FROM meals").
+//	query := "SELECT user_id, date, lunch, dinner FROM meals"
+	query := `SELECT 
+        m.user_id, 
+        m.date, 
+        lunch_trans.name AS lunch, 
+        dinner_trans.name AS dinner 
+    FROM meals m 
+    LEFT JOIN meal_option_translations lunch_trans  
+        ON m.lunch = lunch_trans.meal_option_id AND lunch_trans.language_code = 'ja' 
+    LEFT JOIN meal_option_translations dinner_trans 
+        ON m.dinner = dinner_trans.meal_option_id AND dinner_trans.language_code = 'ja'`
+	mock.ExpectQuery(query).
 		WillReturnRows(rows)
 
 	r := setupRouter()
@@ -60,7 +71,8 @@ func TestGetMeals(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-    expectedBody := `[{"user_id":1,"date":"2024-02-04T00:00:00Z","lunch":true,"dinner":true},{"user_id":2,"date":"2024-02-04T00:00:00Z","lunch":false,"dinner":true}]`
+//    expectedBody := `[{"user_id":1,"date":"2024-02-04T00:00:00Z","lunch":3,"dinner":2},{"user_id":2,"date":"2024-02-04T00:00:00Z","lunch":1,"dinner":3}]`
+    expectedBody := `[{"user_id":1,"date":"2024-02-04T00:00:00Z","lunch":"弁当","dinner":"家"},{"user_id":2,"date":"2024-02-04T00:00:00Z","lunch":"なし","dinner":"弁当"}]`
     assert.JSONEq(t, expectedBody, w.Body.String())
 }
 
@@ -78,7 +90,7 @@ func TestUpdateMeal(t *testing.T) {
     defer dbMock.Close()
     db = dbMock
 
-    reqBody := `{"user_id": 1, "date": "2024-02-09", "lunch": true, "dinner": false}`
+    reqBody := `{"user_id": 1, "date": "2024-02-09", "lunch": 1, "dinner": 2}`
     req, err := http.NewRequest(http.MethodPut, "/api/meals/1", bytes.NewBufferString(reqBody))
     if err != nil {
         t.Fatalf("failed to create request: %s", err)
@@ -86,7 +98,7 @@ func TestUpdateMeal(t *testing.T) {
     req.Header.Set("Content-Type", "application/json")
 
     mock.ExpectExec(`INSERT INTO meals \(user_id, date, lunch, dinner\) VALUES \(\$1, \$2, \$3, \$4\) ON CONFLICT \(user_id, date\) DO UPDATE SET lunch = EXCLUDED\.lunch, dinner = EXCLUDED\.dinner`).
-        WithArgs(1, "2024-02-09", true, false).
+        WithArgs(1, "2024-02-09", 1, 2).
         WillReturnResult(sqlmock.NewResult(1, 1))
 
     w := httptest.NewRecorder()
