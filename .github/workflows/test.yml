@@ -1,17 +1,35 @@
-name: Backend Test
+name: Full Test Suite
 
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - main
 
 jobs:
-  test:
+  full-test:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 1.23
+
+      - name: Install Go dependencies
+        run: |
+          cd backend
+          go mod tidy
+
+      - name: Run Go Unit Tests
+        run: |
+          cd backend
+          go test ./... -v
 
       - name: Set up Docker Compose
         run: |
@@ -19,22 +37,53 @@ jobs:
           docker compose up -d
           docker compose ps
 
-      - name: Wait for backend to be ready
+      - name: Wait for PostgreSQL to be ready
         run: |
-          echo "Waiting for backend to be ready..."
+          echo "Waiting for PostgreSQL to be ready..."
           for i in {1..30}; do
-            if docker compose exec backend curl -s http://localhost:8080/health | grep '"status":"healthy"'; then
-                echo "Backend is healthy"
+            if docker compose exec postgres pg_isready | grep -q 'accepting connections'; then
+              echo "PostgreSQL is ready"
               exit 0
             fi
             echo "Retrying..."
             sleep 3
           done
-          echo "Backend failed to start"
+          echo "PostgreSQL not ready after retries. Exiting."
           exit 1
 
-      - name: Run Backend Tests
-        run: docker compose exec backend go test ./...
+      - name: Wait for Backend to be ready
+        run: |
+          echo "Waiting for Backend to be ready..."
+          for i in {1..30}; do
+            if docker compose exec backend curl -s http://localhost:8080/health | grep -q '"status":"healthy"'; then
+              echo "Backend is healthy"
+              exit 0
+            fi
+            echo "Retrying..."
+            sleep 3
+          done
+          echo "Backend not healthy after retries. Exiting."
+          exit 1
+
+      - name: Wait for Frontend to be ready
+        run: |
+          echo "Waiting for Frontend to be ready..."
+          for i in {1..30}; do
+            if curl -s http://localhost:3000/health | grep -q '"status":"healthy"'; then
+              echo "Frontend is ready"
+              exit 0
+            fi
+            echo "Retrying..."
+            sleep 3
+          done
+          echo "Frontend not ready after retries. Exiting."
+          exit 1
+
+#      - name: Run Backend Tests (Integration)
+#        run: docker compose exec backend go test ./...
+
+#      - name: Run Frontend Tests
+#        run: docker compose exec frontend npm test
 
       - name: Clean up
         if: always()

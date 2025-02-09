@@ -17,6 +17,14 @@ type Meal struct {
 
 var db *sql.DB
 
+func healthCheck(c *gin.Context) {
+    if err := db.Ping(); err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"status": "unhealthy", "error": err.Error()})
+        return
+    }
+    c.JSON(http.StatusOK, gin.H{"status":"healthy"})
+}
+
 func getMeals(c *gin.Context) {
     rows, err := db.Query("SELECT user_id, date, lunch, dinner FROM meals")
     if err != nil {
@@ -52,14 +60,6 @@ func updateMeal(c *gin.Context) {
     c.JSON(http.StatusOK, gin.H{"message": "Meal updated"})
 }
 
-func healthCheck(c *gin.Context) {
-    if err := db.Ping(); err != nil {
-        c.JSON(http.StatusInternalServerError, gin.H{"status": "unhealthy", "error": err.Error()})
-        return
-    }
-    c.JSON(http.StatusOK, gin.H{"status": "healthy"})
-}
-
 func main() {
     var err error
     db, err = sql.Open("postgres", os.Getenv("DATABASE_URL"))
@@ -69,10 +69,9 @@ func main() {
     defer db.Close()
 
     r := gin.Default()
+    r.GET("/health", healthCheck)
     r.GET("/api/meals", getMeals)
     r.PUT("/api/meals/:user_id", updateMeal)
-
-    r.GET("/health", healthCheck)
 
     r.Run(":8080")
 }

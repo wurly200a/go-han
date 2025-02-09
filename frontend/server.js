@@ -10,6 +10,15 @@ app.use(bodyParser.json());
 
 const BACKEND_URL = 'http://backend:8080/api/meals';
 
+app.get('/health', async (req, res) => {
+  try {
+    await axios.get(BACKEND_URL);
+    res.status(200).json({ status: 'healthy' });
+  } catch (error) {
+    res.status(500).json({ status: 'unhealthy', error: 'Backend is not reachable' });
+  }
+});
+
 app.get('/api/meals', async (req, res) => {
   try {
     const response = await axios.get(BACKEND_URL);
@@ -52,6 +61,22 @@ if (process.env.NODE_ENV === 'test') {
         .send({ date: '2024-02-04', lunch: false, dinner: false });
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('message');
+    });
+
+    it('should return healthy status from /health', async () => {
+      const res = await request(app).get('/health');
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('healthy');
+    });
+
+    it('should return unhealthy status if backend is not reachable from /health', async () => {
+      // Simulate backend unavailability by mocking axios call
+      axios.get = jest.fn().mockRejectedValueOnce(new Error('Backend is not reachable'));
+
+      const res = await request(app).get('/health');
+      expect(res.status).toBe(500);
+      expect(res.body.status).toBe('unhealthy');
+      expect(res.body.error).toBe('Backend is not reachable');
     });
   });
 }
