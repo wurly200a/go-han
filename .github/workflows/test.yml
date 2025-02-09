@@ -1,0 +1,41 @@
+name: Backend Test
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Compose
+        run: |
+          cp .env.example .env
+          docker compose up -d
+          docker compose ps
+
+      - name: Wait for backend to be ready
+        run: |
+          echo "Waiting for backend to be ready..."
+          for i in {1..30}; do
+            if docker compose exec backend curl -s http://localhost:8080/health | grep '"status":"healthy"'; then
+                echo "Backend is healthy"
+              exit 0
+            fi
+            echo "Retrying..."
+            sleep 3
+          done
+          echo "Backend failed to start"
+          exit 1
+
+      - name: Run Backend Tests
+        run: docker compose exec backend go test ./...
+
+      - name: Clean up
+        if: always()
+        run: docker compose down
