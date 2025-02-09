@@ -1,6 +1,8 @@
 package main
 
 import (
+    "log"
+	"encoding/json"
     "database/sql"
     "net/http"
     "github.com/gin-gonic/gin"
@@ -26,8 +28,12 @@ func healthCheck(c *gin.Context) {
 }
 
 func getMeals(c *gin.Context) {
-    rows, err := db.Query("SELECT user_id, date, lunch, dinner FROM meals")
+    query := "SELECT user_id, date, lunch, dinner FROM meals"
+    log.Printf("Executing SQL: %s", query)
+
+    rows, err := db.Query(query)
     if err != nil {
+        log.Printf("SQL Error: %v", err)
         c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
         return
     }
@@ -37,11 +43,16 @@ func getMeals(c *gin.Context) {
     for rows.Next() {
         var m Meal
         if err := rows.Scan(&m.UserID, &m.Date, &m.Lunch, &m.Dinner); err != nil {
+            log.Printf("Row Scan Error: %v", err)
             c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
             return
         }
         meals = append(meals, m)
     }
+
+    responseJSON, _ := json.Marshal(meals)
+    log.Printf("SQL Result: %s", responseJSON)
+
     c.JSON(http.StatusOK, meals)
 }
 

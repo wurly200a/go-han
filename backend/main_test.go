@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"bytes"
 	"net/http"
 	"net/http/httptest"
@@ -55,6 +56,7 @@ func TestGetMeals(t *testing.T) {
 	r := setupRouter()
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/meals", nil)
+	log.Printf("req.URL: %s", req.URL)
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
