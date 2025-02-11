@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Meal Schedule</title>
+  <style>
+    body { font-family: Arial, sans-serif; }
+    .form-container { margin-bottom: 20px; }
+    table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
+    th, td { border: 1px solid #ccc; padding: 6px; text-align: center; }
+    th { background-color: #f2f2f2; }
+    .update-container { margin-top: 20px; }
+    .cell-highlight { background-color: yellow !important; }
+    .saturday { background-color: #add8e6; } 
+    .sunday { background-color: #ffc0cb; }
+  </style>
+</head>
+<body>
+  <h1>Meal Schedule</h1>
+  <div class="form-container">
+    <label for="startDate">Start Date (YYYY-MM-DD): </label>
+    <input type="text" id="startDate">
+    <label for="days">Number of Days: </label>
+    <input type="number" id="days" value="7" min="1">
+    <button id="loadSchedule">Load Schedule</button>
+  </div>
+  <div id="scheduleContainer"></div>
+  <div class="update-container">
+    <button id="updateAll">Update All</button>
+  </div>
+
+  <!-- Include jQuery -->
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script>
+    function getToday() {
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      const mm = String(today.getMonth() + 1).padStart(2, '0');
+      const dd = String(today.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    }
+    $('#startDate').val(getToday());
+
+    const weekdayNames = ["日", "月", "火", "水", "木", "金", "土"];
+
+    // Meal options mapping.
+    const mealOptions = {
+      1: "なし",
+      2: "家",
+      3: "弁当"
+    };
+
+    // Load schedule from backend.
+    function loadSchedule() {
+      const startDate = $('#startDate').val();
+      const days = $('#days').val();
+      $.ajax({
+        url: '/api/meals',
+        method: 'GET',
+        data: { date: startDate, days: days },
+        success: function(data) {
+          renderSchedule(data);
+        },
+        error: function(err) {
+          alert('Failed to load schedule.');
+          console.error(err);
+        }
+      });
+    }
+
+    // Render schedule table.
+    function renderSchedule(data) {
+      $('#scheduleContainer').empty();
+      const dates = Object.keys(data).sort();
+      if (dates.length === 0) {
+        $('#scheduleContainer').text('No schedule data.');
+        return;
+      }
+      const firstDateMeals = data[dates[0]];
+      const users = firstDateMeals.slice().sort((a, b) => a.user_id - b.user_id);
+
+      const $table = $('<table></table>');
+      const $thead1 = $('<tr></tr>');
+      $thead1.append($('<th></th>').text('Date'));
+      users.forEach(user => {
+        const $link = $('<a></a>')
+          .attr('href', '/user-defaults.html?user_id=' + user.user_id)
+          .text(user.user_name);
+        $thead1.append($('<th></th>').attr('colspan', 2).append($link));
+      });
+      const $thead2 = $('<tr></tr>');
+      $thead2.append($('<th></th>'));
+      users.forEach(() => {
+        $thead2.append($('<th></th>').text('Lunch'));
+        $thead2.append($('<th></th>').text('Dinner'));
+      });
+      $table.append($('<thead></thead>').append($thead1).append($thead2));
+
+      const $tbody = $('<tbody></tbody>');
+      dates.forEach(date => {
+        const $tr = $('<tr></tr>');
+        const d = new Date(date);
+        const weekday = d.getDay();  // 0:日, 6:土
+        const dayName = weekdayNames[weekday];
+        const dateDisplay = `${date} (${dayName})`;
+        let dateClass = "";
+        if (weekday === 0) dateClass = "sunday";
+        else if (weekday === 6) dateClass = "saturday";
+        $tr.append($('<td></td>').addClass(dateClass).text(dateDisplay));
+
+        const mealMapping = {};
+        data[date].forEach(meal => {
+          mealMapping[meal.user_id] = meal;
+        });
+
+        users.forEach(user => {
+          const meal = mealMapping[user.user_id] || { lunch: "なし", dinner: "なし", defaultLunch: "なし", defaultDinner: "なし" };
+          // Lunch dropdown.
+          const $lunchSelect = $('<select></select>')
+            .attr('data-user-id', user.user_id)
+            .attr('data-date', date)
+            .addClass('lunchSelect');
+          $.each(mealOptions, function(value, text) {
+            const $option = $('<option></option>')
+              .attr('value', value)
+              .text(text);
+            if (meal.lunch === text) $option.prop('selected', true);
+            $lunchSelect.append($option);
+          });
+          // Dinner dropdown.
+          const $dinnerSelect = $('<select></select>')
+            .attr('data-user-id', user.user_id)
+            .attr('data-date', date)
+            .addClass('dinnerSelect');
+          $.each(mealOptions, function(value, text) {
+            const $option = $('<option></option>')
+              .attr('value', value)
+              .text(text);
+            if (meal.dinner === text) $option.prop('selected', true);
+            $dinnerSelect.append($option);
+          });
+          const $lunchCell = $('<td></td>').append($lunchSelect);
+          if (meal.lunch !== meal.defaultLunch) $lunchCell.addClass('cell-highlight');
+          const $dinnerCell = $('<td></td>').append($dinnerSelect);
+          if (meal.dinner !== meal.defaultDinner) $dinnerCell.addClass('cell-highlight');
+          $tr.append($lunchCell).append($dinnerCell);
+        });
+        $tbody.append($tr);
+      });
+      $table.append($tbody);
+      $('#scheduleContainer').append($table);
+    }
+
+    // Update All: gather changes and send bulk update.
+    $('#updateAll').click(function() {
+      const updates = [];
+      $('#scheduleContainer tbody tr').each(function() {
+        const date = $(this).find('td:first').text().split(" ")[0];
+        $(this).find('select.lunchSelect').each(function() {
+          const userId = $(this).attr('data-user-id');
+          const lunch = parseInt($(this).val());
+          const $dinner = $(this).closest('td').next().find('select.dinnerSelect');
+          const dinner = parseInt($dinner.val());
+          updates.push({
+            user_id: parseInt(userId),
+            date: date,
+            lunch: lunch,
+            dinner: dinner
+          });
+        });
+      });
+      $.ajax({
+        url: '/api/meals/bulk-update',
+        method: 'PUT',
+        contentType: 'application/json',
+        data: JSON.stringify(updates),
+        success: function(response) {
+          alert('Meals updated successfully.');
+          loadSchedule();
+        },
+        error: function(err) {
+          alert('Failed to update meals.');
+          console.error(err);
+        }
+      });
+    });
+
+    $(document).ready(function() {
+      loadSchedule();
+    });
+    $('#loadSchedule').click(function() {
+      loadSchedule();
+    });
+  </script>
+</body>
+</html>

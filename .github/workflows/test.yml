@@ -55,7 +55,7 @@ jobs:
         run: |
           echo "Waiting for Backend to be ready..."
           for i in {1..30}; do
-            if docker compose exec backend curl -s http://localhost:8080/health | grep -q '"status":"healthy"'; then
+            if docker compose exec backend curl -s http://localhost:8080/api/health | grep -q '"status":"healthy"'; then
               echo "Backend is healthy"
               exit 0
             fi

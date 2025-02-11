@@ -34,6 +34,14 @@ CREATE TABLE IF NOT EXISTS meals (
     UNIQUE (user_id, date)  -- Ensures one meal record per user per day
 );
 
+CREATE TABLE IF NOT EXISTS user_defaults (
+    user_id INT REFERENCES users(id) ON DELETE CASCADE,
+    day_of_week INT NOT NULL,  -- 0: 日, 1: 月, …, 6: 土
+    lunch INT,
+    dinner INT,
+    PRIMARY KEY (user_id, day_of_week)
+);
+
 -- Insert default meal options
 INSERT INTO meal_options (id) VALUES (1), (2), (3);
 
@@ -46,9 +54,40 @@ INSERT INTO meal_option_translations (meal_option_id, language_code, name) VALUE
 -- Insert sample users
 INSERT INTO users (name, age) VALUES ('Saburo', 16), ('Jiro', 19), ('Taro', 21), ('Father', 47);
 
+INSERT INTO user_defaults (user_id, day_of_week, lunch, dinner) VALUES
+(1, 0, 2, 2),
+(1, 1, 2, 2),
+(1, 2, 2, 2),
+(1, 3, 2, 2),
+(1, 4, 2, 2),
+(1, 5, 2, 2),
+(1, 6, 2, 2),
+(2, 0, 2, 2),
+(2, 1, 2, 2),
+(2, 2, 2, 2),
+(2, 3, 2, 2),
+(2, 4, 2, 2),
+(2, 5, 2, 2),
+(2, 6, 2, 2),
+(3, 0, 2, 2),
+(3, 1, 2, 2),
+(3, 2, 2, 2),
+(3, 3, 2, 2),
+(3, 4, 2, 2),
+(3, 5, 2, 2),
+(3, 6, 2, 2),
+(4, 0, 2, 2),
+(4, 1, 2, 2),
+(4, 2, 2, 2),
+(4, 3, 2, 2),
+(4, 4, 2, 2),
+(4, 5, 2, 2),
+(4, 6, 2, 2);
+
 -- Insert sample meal records (using meal_options IDs)
 INSERT INTO meals (user_id, date, lunch, dinner) VALUES
 (1, '2024-02-04', 3, 2),  -- 'Obento' for lunch, 'Home' for dinner
+(1, '2024-02-05', 3, 1),  -- 'Obento' for lunch, 'None' for dinner
 (2, '2024-02-04', 1, 3),  -- 'None' for lunch, 'Obento' for dinner
 (3, '2024-02-04', 3, 1),  -- 'Obento' for lunch, 'None' for dinner
 (4, '2024-02-04', 3, 1);  -- 'Obento' for lunch, 'None' for dinner

@@ -1,82 +1,85 @@
 const express = require('express');
 const axios = require('axios');
-const app = express();
-const cors = require('cors');
+const path = require('path');
 const bodyParser = require('body-parser');
-const request = require('supertest');
+const cors = require('cors');
 
-app.use(cors());
+const app = express();
+
+// Middleware
 app.use(bodyParser.json());
+app.use(express.static(path.join(__dirname, 'public')));
+app.use(cors());
 
-const BACKEND_URL = 'http://backend:8080/api/meals';
+// Set backend API base URL (can be overridden via environment variable)
+const BACKEND_API_BASE = process.env.BACKEND_API_BASE || 'http://backend:8080/api';
 
+// Health check endpoint for the frontend.
+// This endpoint proxies the backend's /health endpoint.
 app.get('/health', async (req, res) => {
   try {
-    await axios.get(BACKEND_URL);
-    res.status(200).json({ status: 'healthy' });
+    console.log('Frontend /health endpoint called');
+    const response = await axios.get(`${BACKEND_API_BASE}/health`);
+    console.log('Backend /health response:', response.data);
+    res.json(response.data);
   } catch (error) {
-    res.status(500).json({ status: 'unhealthy', error: 'Backend is not reachable' });
+    console.error('Error in frontend /health endpoint:', error.message);
+    res.status(500).json({ error: 'Backend health check failed' });
   }
 });
 
+// Proxy endpoint for GET /api/meals
 app.get('/api/meals', async (req, res) => {
   try {
-    const response = await axios.get(BACKEND_URL);
+    // Forward query parameters (date and days) to the backend
+    const response = await axios.get(`${BACKEND_API_BASE}/meals`, { params: req.query });
     res.json(response.data);
   } catch (error) {
+    console.error('Error fetching meals:', error.message);
     res.status(500).json({ error: 'Failed to fetch meals from backend' });
   }
 });
 
-app.put('/api/meals/:userId', async (req, res) => {
-  const { userId } = req.params;
+// Proxy endpoint for bulk update of meals.
+app.put('/api/meals/bulk-update', async (req, res) => {
   try {
-    const response = await axios.put(`${BACKEND_URL}/${userId}`, req.body);
+    const response = await axios.put(`${BACKEND_API_BASE}/meals/bulk-update`, req.body);
     res.json(response.data);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to update meal in backend' });
+    console.error('Error bulk updating meals:', error.message);
+    res.status(500).json({ error: 'Failed to bulk update meals in backend' });
   }
 });
 
-if (require.main === module) {
-  app.listen(3000, () => {
-    console.log('Server running on port 3000');
-  });
-}
+// Proxy endpoint for GET /api/user-defaults/:user_id
+app.get('/api/user-defaults/:user_id', async (req, res) => {
+  try {
+    const response = await axios.get(`${BACKEND_API_BASE}/user-defaults/${req.params.user_id}`);
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error fetching user defaults:', error.message);
+    res.status(500).json({ error: 'Failed to fetch user defaults from backend' });
+  }
+});
 
-module.exports = app;
+// Proxy endpoint for PUT /api/user-defaults/:user_id
+app.put('/api/user-defaults/:user_id', async (req, res) => {
+  try {
+    const response = await axios.put(`${BACKEND_API_BASE}/user-defaults/${req.params.user_id}`, req.body);
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error updating user defaults:', error.message);
+    res.status(500).json({ error: 'Failed to update user defaults in backend' });
+  }
+});
 
-// Test cases
-if (process.env.NODE_ENV === 'test') {
-  describe('Meal API Tests', () => {
-    it('should fetch all meals', async () => {
-      const res = await request(app).get('/api/meals');
-      expect(res.status).toBe(200);
-      expect(Array.isArray(res.body)).toBe(true);
-    });
+// Serve index.html on the root path
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
-    it('should update a meal', async () => {
-      const res = await request(app)
-        .put('/api/meals/1')
-        .send({ date: '2024-02-04', lunch: false, dinner: false });
-      expect(res.status).toBe(200);
-      expect(res.body).toHaveProperty('message');
-    });
-
-    it('should return healthy status from /health', async () => {
-      const res = await request(app).get('/health');
-      expect(res.status).toBe(200);
-      expect(res.body.status).toBe('healthy');
-    });
-
-    it('should return unhealthy status if backend is not reachable from /health', async () => {
-      // Simulate backend unavailability by mocking axios call
-      axios.get = jest.fn().mockRejectedValueOnce(new Error('Backend is not reachable'));
-
-      const res = await request(app).get('/health');
-      expect(res.status).toBe(500);
-      expect(res.body.status).toBe('unhealthy');
-      expect(res.body.error).toBe('Backend is not reachable');
-    });
-  });
-}
+// Start server
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Frontend server running on port ${PORT}`);
+});

@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>User Default Settings</title>
+  <style>
+    body { font-family: Arial, sans-serif; }
+    table { border-collapse: collapse; width: 50%; margin-bottom: 20px; }
+    th, td { border: 1px solid #ccc; padding: 6px; text-align: center; }
+    th { background-color: #f2f2f2; }
+  </style>
+</head>
+<body>
+  <h1>User Default Settings</h1>
+  <div id="userInfo"></div>
+  <table id="defaultsTable">
+    <thead>
+      <tr>
+        <th>Day</th>
+        <th>Lunch</th>
+        <th>Dinner</th>
+      </tr>
+    </thead>
+    <tbody>
+      <!-- Rows will be populated dynamically -->
+    </tbody>
+  </table>
+  <button id="saveDefaults">Save Defaults</button>
+  <button onclick="window.location.href='/'">Back to Schedule</button>
+
+  <!-- Include jQuery -->
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script>
+    // Japanese weekday names (0: 日, 1: 月, …, 6: 土).
+    const weekdayNames = ["日", "月", "火", "水", "木", "金", "土"];
+    const mealOptions = { 1: "なし", 2: "家", 3: "弁当" };
+
+    // Get user_id from query parameters.
+    function getQueryParam(param) {
+      const urlParams = new URLSearchParams(window.location.search);
+      return urlParams.get(param);
+    }
+    const userId = getQueryParam("user_id");
+
+    function loadUserDefaults() {
+      $.ajax({
+        url: '/api/user-defaults/' + userId,
+        method: 'GET',
+        success: function(data) {
+          renderDefaults(data);
+        },
+        error: function(err) {
+          alert('Failed to load user defaults.');
+          console.error(err);
+        }
+      });
+    }
+
+    function renderDefaults(data) {
+      const defaultsMap = {};
+      data.forEach(item => {
+        defaultsMap[item.day_of_week] = item;
+      });
+      const $tbody = $('#defaultsTable tbody');
+      $tbody.empty();
+      for (let day = 0; day <= 6; day++) {
+        const $tr = $('<tr></tr>');
+        $tr.append($('<td></td>').text(weekdayNames[day]));
+        // Lunch dropdown.
+        const $lunchSelect = $('<select></select>').attr('data-day', day).addClass('lunchDefault');
+        $.each(mealOptions, function(value, text) {
+          const $option = $('<option></option>').attr('value', value).text(text);
+          if (defaultsMap[day] && defaultsMap[day].lunch == value) {
+            $option.prop('selected', true);
+          }
+          $lunchSelect.append($option);
+        });
+        $tr.append($('<td></td>').append($lunchSelect));
+        // Dinner dropdown.
+        const $dinnerSelect = $('<select></select>').attr('data-day', day).addClass('dinnerDefault');
+        $.each(mealOptions, function(value, text) {
+          const $option = $('<option></option>').attr('value', value).text(text);
+          if (defaultsMap[day] && defaultsMap[day].dinner == value) {
+            $option.prop('selected', true);
+          }
+          $dinnerSelect.append($option);
+        });
+        $tr.append($('<td></td>').append($dinnerSelect));
+        $tbody.append($tr);
+      }
+      $('#userInfo').html('Editing defaults for User ID: ' + userId);
+    }
+
+    $('#saveDefaults').click(function() {
+      const defaults = [];
+      $('#defaultsTable tbody tr').each(function() {
+        const day = parseInt($(this).find('select.lunchDefault').attr('data-day'));
+        const lunch = parseInt($(this).find('select.lunchDefault').val());
+        const dinner = parseInt($(this).find('select.dinnerDefault').val());
+        defaults.push({ day_of_week: day, lunch: lunch, dinner: dinner, user_id: parseInt(userId) });
+      });
+      $.ajax({
+        url: '/api/user-defaults/' + userId,
+        method: 'PUT',
+        contentType: 'application/json',
+        data: JSON.stringify(defaults),
+        success: function(response) {
+          alert('User defaults updated successfully.');
+          window.location.href = '/';
+        },
+        error: function(err) {
+          alert('Failed to update user defaults.');
+          console.error(err);
+        }
+      });
+    });
+
+    $(document).ready(function() {
+      loadUserDefaults();
+    });
+  </script>
+</body>
+</html>
