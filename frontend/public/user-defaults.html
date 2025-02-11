@@ -2,46 +2,76 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <!-- Ensure proper scaling on mobile devices -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <title>User Default Settings</title>
   <style>
-    body { font-family: Arial, sans-serif; }
-    table { border-collapse: collapse; width: 50%; margin-bottom: 20px; }
-    th, td { border: 1px solid #ccc; padding: 6px; text-align: center; }
-    th { background-color: #f2f2f2; }
+    body {
+      font-family: Arial, sans-serif;
+      font-size: 16px; /* Adjust the base font size for readability */
+    }
+    .table-container {
+      overflow-x: auto; /* Enable horizontal scrolling if needed */
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      min-width: 300px; /* Ensures the table is wide enough to require scrolling on small screens */
+      margin-bottom: 20px;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 6px;
+      text-align: center;
+      white-space: nowrap; /* Prevents wrapping of table content */
+    }
+    th {
+      background-color: #f2f2f2;
+    }
+    .btn-container {
+      margin-top: 20px;
+    }
   </style>
 </head>
 <body>
   <h1>User Default Settings</h1>
   <div id="userInfo"></div>
-  <table id="defaultsTable">
-    <thead>
-      <tr>
-        <th>Day</th>
-        <th>Lunch</th>
-        <th>Dinner</th>
-      </tr>
-    </thead>
-    <tbody>
-      <!-- Rows will be populated dynamically -->
-    </tbody>
-  </table>
-  <button id="saveDefaults">Save Defaults</button>
-  <button onclick="window.location.href='/'">Back to Schedule</button>
+  <!-- Wrap table in a container for horizontal scrolling -->
+  <div class="table-container">
+    <table id="defaultsTable">
+      <thead>
+        <tr>
+          <th>Day</th>
+          <th>Lunch</th>
+          <th>Dinner</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Table rows will be populated dynamically -->
+      </tbody>
+    </table>
+  </div>
+  <div class="btn-container">
+    <button id="saveDefaults">Save Defaults</button>
+    <button onclick="window.location.href='/'">Back to Schedule</button>
+  </div>
 
-  <!-- Include jQuery -->
+  <!-- Include jQuery from CDN -->
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
   <script>
-    // Japanese weekday names (0: 日, 1: 月, …, 6: 土).
+    // Japanese weekday names (0: Sunday, ... , 6: Saturday)
     const weekdayNames = ["日", "月", "火", "水", "木", "金", "土"];
+    // Meal options mapping.
     const mealOptions = { 1: "なし", 2: "家", 3: "弁当" };
 
-    // Get user_id from query parameters.
+    // Retrieve user_id from query parameters.
     function getQueryParam(param) {
       const urlParams = new URLSearchParams(window.location.search);
       return urlParams.get(param);
     }
     const userId = getQueryParam("user_id");
 
+    // Function to load user default settings from the backend.
     function loadUserDefaults() {
       $.ajax({
         url: '/api/user-defaults/' + userId,
@@ -56,6 +86,7 @@
       });
     }
 
+    // Function to render the defaults table.
     function renderDefaults(data) {
       const defaultsMap = {};
       data.forEach(item => {
@@ -66,20 +97,28 @@
       for (let day = 0; day <= 6; day++) {
         const $tr = $('<tr></tr>');
         $tr.append($('<td></td>').text(weekdayNames[day]));
-        // Lunch dropdown.
-        const $lunchSelect = $('<select></select>').attr('data-day', day).addClass('lunchDefault');
+        // Create lunch dropdown.
+        const $lunchSelect = $('<select></select>')
+          .attr('data-day', day)
+          .addClass('lunchDefault');
         $.each(mealOptions, function(value, text) {
-          const $option = $('<option></option>').attr('value', value).text(text);
+          const $option = $('<option></option>')
+            .attr('value', value)
+            .text(text);
           if (defaultsMap[day] && defaultsMap[day].lunch == value) {
             $option.prop('selected', true);
           }
           $lunchSelect.append($option);
         });
         $tr.append($('<td></td>').append($lunchSelect));
-        // Dinner dropdown.
-        const $dinnerSelect = $('<select></select>').attr('data-day', day).addClass('dinnerDefault');
+        // Create dinner dropdown.
+        const $dinnerSelect = $('<select></select>')
+          .attr('data-day', day)
+          .addClass('dinnerDefault');
         $.each(mealOptions, function(value, text) {
-          const $option = $('<option></option>').attr('value', value).text(text);
+          const $option = $('<option></option>')
+            .attr('value', value)
+            .text(text);
           if (defaultsMap[day] && defaultsMap[day].dinner == value) {
             $option.prop('selected', true);
           }
@@ -91,6 +130,7 @@
       $('#userInfo').html('Editing defaults for User ID: ' + userId);
     }
 
+    // Save the user default settings by sending them to the backend.
     $('#saveDefaults').click(function() {
       const defaults = [];
       $('#defaultsTable tbody tr').each(function() {

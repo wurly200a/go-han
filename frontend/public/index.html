@@ -2,17 +2,49 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <!-- This meta tag ensures proper scaling on mobile devices -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <title>Meal Schedule</title>
   <style>
-    body { font-family: Arial, sans-serif; }
-    .form-container { margin-bottom: 20px; }
-    table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
-    th, td { border: 1px solid #ccc; padding: 6px; text-align: center; }
-    th { background-color: #f2f2f2; }
-    .update-container { margin-top: 20px; }
-    .cell-highlight { background-color: yellow !important; }
-    .saturday { background-color: #add8e6; } 
-    .sunday { background-color: #ffc0cb; }
+    body {
+      font-family: Arial, sans-serif;
+      font-size: 16px; /* You can adjust the base font size if needed */
+    }
+    .form-container {
+      margin-bottom: 20px;
+    }
+    /* The table-container div allows horizontal scrolling if the table overflows */
+    .table-container {
+      overflow-x: auto;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      min-width: 800px; /* Ensure the table is wide enough to require horizontal scrolling on small screens */
+      margin-bottom: 20px;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 6px;
+      text-align: center;
+      white-space: nowrap; /* Prevent wrapping of table cell content */
+    }
+    th {
+      background-color: #f2f2f2;
+    }
+    .update-container {
+      margin-top: 20px;
+    }
+    /* Highlight individual cells if they differ from default */
+    .cell-highlight {
+      background-color: yellow !important;
+    }
+    .saturday {
+      background-color: #add8e6; /* Light blue for Saturday */
+    }
+    .sunday {
+      background-color: #ffc0cb; /* Pink for Sunday */
+    }
   </style>
 </head>
 <body>
@@ -24,14 +56,16 @@
     <input type="number" id="days" value="7" min="1">
     <button id="loadSchedule">Load Schedule</button>
   </div>
-  <div id="scheduleContainer"></div>
+  <!-- Wrap the schedule table in a container for horizontal scrolling -->
+  <div class="table-container" id="scheduleContainer"></div>
   <div class="update-container">
     <button id="updateAll">Update All</button>
   </div>
 
-  <!-- Include jQuery -->
+  <!-- Include jQuery from CDN -->
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
   <script>
+    // Set default start date to today.
     function getToday() {
       const today = new Date();
       const yyyy = today.getFullYear();
@@ -41,6 +75,7 @@
     }
     $('#startDate').val(getToday());
 
+    // Japanese weekday names.
     const weekdayNames = ["日", "月", "火", "水", "木", "金", "土"];
 
     // Meal options mapping.
@@ -76,38 +111,39 @@
         $('#scheduleContainer').text('No schedule data.');
         return;
       }
+      // Extract user list from the first date's data.
       const firstDateMeals = data[dates[0]];
       const users = firstDateMeals.slice().sort((a, b) => a.user_id - b.user_id);
 
-      const $table = $('<table></table>');
-      const $thead1 = $('<tr></tr>');
-      $thead1.append($('<th></th>').text('Date'));
+      // Create table.
+      let tableHtml = '<table>';
+      // Header row 1: Date | each user (as link with colspan=2)
+      tableHtml += '<thead><tr><th>Date</th>';
       users.forEach(user => {
-        const $link = $('<a></a>')
-          .attr('href', '/user-defaults.html?user_id=' + user.user_id)
-          .text(user.user_name);
-        $thead1.append($('<th></th>').attr('colspan', 2).append($link));
+        tableHtml += '<th colspan="2"><a href="/user-defaults.html?user_id=' + user.user_id + '">' + user.user_name + '</a></th>';
       });
-      const $thead2 = $('<tr></tr>');
-      $thead2.append($('<th></th>'));
+      tableHtml += '</tr>';
+      // Header row 2: empty cell, then Lunch and Dinner for each user.
+      tableHtml += '<tr><th></th>';
       users.forEach(() => {
-        $thead2.append($('<th></th>').text('Lunch'));
-        $thead2.append($('<th></th>').text('Dinner'));
+        tableHtml += '<th>Lunch</th><th>Dinner</th>';
       });
-      $table.append($('<thead></thead>').append($thead1).append($thead2));
+      tableHtml += '</tr></thead>';
 
-      const $tbody = $('<tbody></tbody>');
+      // Build table body.
+      tableHtml += '<tbody>';
       dates.forEach(date => {
-        const $tr = $('<tr></tr>');
+        tableHtml += '<tr>';
         const d = new Date(date);
-        const weekday = d.getDay();  // 0:日, 6:土
+        const weekday = d.getDay(); // 0: Sunday, ... 6: Saturday
         const dayName = weekdayNames[weekday];
-        const dateDisplay = `${date} (${dayName})`;
+        const dateDisplay = date + ' (' + dayName + ')';
         let dateClass = "";
         if (weekday === 0) dateClass = "sunday";
         else if (weekday === 6) dateClass = "saturday";
-        $tr.append($('<td></td>').addClass(dateClass).text(dateDisplay));
+        tableHtml += '<td class="' + dateClass + '">' + dateDisplay + '</td>';
 
+        // Create a mapping for this date.
         const mealMapping = {};
         data[date].forEach(meal => {
           mealMapping[meal.user_id] = meal;
@@ -115,43 +151,39 @@
 
         users.forEach(user => {
           const meal = mealMapping[user.user_id] || { lunch: "なし", dinner: "なし", defaultLunch: "なし", defaultDinner: "なし" };
-          // Lunch dropdown.
-          const $lunchSelect = $('<select></select>')
-            .attr('data-user-id', user.user_id)
-            .attr('data-date', date)
-            .addClass('lunchSelect');
-          $.each(mealOptions, function(value, text) {
-            const $option = $('<option></option>')
-              .attr('value', value)
-              .text(text);
-            if (meal.lunch === text) $option.prop('selected', true);
-            $lunchSelect.append($option);
-          });
-          // Dinner dropdown.
-          const $dinnerSelect = $('<select></select>')
-            .attr('data-user-id', user.user_id)
-            .attr('data-date', date)
-            .addClass('dinnerSelect');
-          $.each(mealOptions, function(value, text) {
-            const $option = $('<option></option>')
-              .attr('value', value)
-              .text(text);
-            if (meal.dinner === text) $option.prop('selected', true);
-            $dinnerSelect.append($option);
-          });
-          const $lunchCell = $('<td></td>').append($lunchSelect);
-          if (meal.lunch !== meal.defaultLunch) $lunchCell.addClass('cell-highlight');
-          const $dinnerCell = $('<td></td>').append($dinnerSelect);
-          if (meal.dinner !== meal.defaultDinner) $dinnerCell.addClass('cell-highlight');
-          $tr.append($lunchCell).append($dinnerCell);
+          // Build lunch dropdown.
+          let lunchSelect = '<select class="lunchSelect" data-user-id="' + user.user_id + '" data-date="' + date + '">';
+          for (let key in mealOptions) {
+            lunchSelect += '<option value="' + key + '"';
+            if (meal.lunch === mealOptions[key]) {
+              lunchSelect += ' selected';
+            }
+            lunchSelect += '>' + mealOptions[key] + '</option>';
+          }
+          lunchSelect += '</select>';
+          // Build dinner dropdown.
+          let dinnerSelect = '<select class="dinnerSelect" data-user-id="' + user.user_id + '" data-date="' + date + '">';
+          for (let key in mealOptions) {
+            dinnerSelect += '<option value="' + key + '"';
+            if (meal.dinner === mealOptions[key]) {
+              dinnerSelect += ' selected';
+            }
+            dinnerSelect += '>' + mealOptions[key] + '</option>';
+          }
+          dinnerSelect += '</select>';
+          // Highlight cell if value differs from default.
+          let lunchCellClass = (meal.lunch !== meal.defaultLunch) ? 'cell-highlight' : '';
+          let dinnerCellClass = (meal.dinner !== meal.defaultDinner) ? 'cell-highlight' : '';
+          tableHtml += '<td class="' + lunchCellClass + '">' + lunchSelect + '</td>';
+          tableHtml += '<td class="' + dinnerCellClass + '">' + dinnerSelect + '</td>';
         });
-        $tbody.append($tr);
+        tableHtml += '</tr>';
       });
-      $table.append($tbody);
-      $('#scheduleContainer').append($table);
+      tableHtml += '</tbody></table>';
+      $('#scheduleContainer').html(tableHtml);
     }
 
-    // Update All: gather changes and send bulk update.
+    // When the "Update All" button is clicked, gather all changes and send a bulk update.
     $('#updateAll').click(function() {
       const updates = [];
       $('#scheduleContainer tbody tr').each(function() {
