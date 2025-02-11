@@ -1,1 +1,4 @@
 .env
+db/01_create_database.sql
+db/03_init_data.sql
+my_pgdata
