@@ -22,7 +22,7 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
     ports:
-      - "8080:8080"
+      - "${BACKEND_EXTERNAL_PORT}:8080"
 
   frontend:
     build: ./frontend
@@ -31,7 +31,7 @@ services:
     depends_on:
       - backend
     ports:
-      - "3000:3000"
+      - "${FRONTEND_EXTERNAL_PORT}:3000"
 
 volumes:
   postgres_data:
