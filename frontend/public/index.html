@@ -146,8 +146,10 @@
         const d = new Date(date);
         const weekday = d.getDay(); // 0: Sunday, ... 6: Saturday
         const dayName = weekdayNames[weekday];
-        const dateDisplay = date + ' (' + dayName + ')';
-        // Determine class for the date cell based on weekday.
+        // Format display as MM/DD (drop the year)
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        const dateDisplay = mm + '/' + dd + ' (' + dayName + ')';
         let dateClass = "";
         if (weekday === 0) dateClass = "sunday";
         else if (weekday === 6) dateClass = "saturday";
