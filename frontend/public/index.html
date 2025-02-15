@@ -10,7 +10,17 @@
       font-family: Arial, sans-serif;
       font-size: 16px; /* Adjust base font size if needed */
     }
-    .form-container {
+    /* Style for the toggle button: small, unobtrusive arrow */
+    #toggleOptions {
+      font-size: 14px;
+      padding: 2px 5px;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+    }
+    /* Container for options that can be toggled */
+    #optionsContainer {
+      display: none;
       margin-bottom: 20px;
     }
     /* The table-container div allows horizontal scrolling if the table overflows */
@@ -62,7 +72,10 @@
 </head>
 <body>
   <h1>Meal Schedule</h1>
-  <div class="form-container">
+  <!-- Small arrow toggle button -->
+  <button id="toggleOptions">▽</button>
+  <!-- Options container: Start Date, Number of Days, Load Schedule -->
+  <div id="optionsContainer" class="form-container">
     <label for="startDate">Start Date (YYYY-MM-DD): </label>
     <input type="text" id="startDate">
     <label for="days">Number of Days: </label>
@@ -75,6 +88,15 @@
   <!-- Include jQuery from CDN -->
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
   <script>
+    // Toggle the display of options using a small arrow button.
+    $('#toggleOptions').click(function() {
+      $('#optionsContainer').slideToggle(function() {
+        // Update arrow based on visibility.
+        const isVisible = $('#optionsContainer').is(':visible');
+        $('#toggleOptions').text(isVisible ? '△' : '▽');
+      });
+    });
+
     // Set default start date to today.
     function getToday() {
       const today = new Date();
