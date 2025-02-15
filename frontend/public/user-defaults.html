@@ -8,7 +8,7 @@
   <style>
     body {
       font-family: Arial, sans-serif;
-      font-size: 16px; /* Adjust the base font size for readability */
+      font-size: 16px; /* Adjust base font size for readability */
     }
     .table-container {
       overflow-x: auto; /* Enable horizontal scrolling if needed */
@@ -16,14 +16,14 @@
     table {
       border-collapse: collapse;
       width: 100%;
-      min-width: 300px; /* Ensures the table is wide enough to require scrolling on small screens */
+      min-width: 300px; /* Ensures the table requires scrolling on small screens */
       margin-bottom: 20px;
     }
     th, td {
       border: 1px solid #ccc;
       padding: 6px;
       text-align: center;
-      white-space: nowrap; /* Prevents wrapping of table content */
+      white-space: nowrap; /* Prevent wrapping of cell content */
     }
     th {
       background-color: #f2f2f2;
@@ -52,7 +52,6 @@
     </table>
   </div>
   <div class="btn-container">
-    <button id="saveDefaults">Save Defaults</button>
     <button onclick="window.location.href='/'">Back to Schedule</button>
   </div>
 
@@ -130,26 +129,32 @@
       $('#userInfo').html('Editing defaults for User ID: ' + userId);
     }
 
-    // Save the user default settings by sending them to the backend.
-    $('#saveDefaults').click(function() {
-      const defaults = [];
-      $('#defaultsTable tbody tr').each(function() {
-        const day = parseInt($(this).find('select.lunchDefault').attr('data-day'));
-        const lunch = parseInt($(this).find('select.lunchDefault').val());
-        const dinner = parseInt($(this).find('select.dinnerDefault').val());
-        defaults.push({ day_of_week: day, lunch: lunch, dinner: dinner, user_id: parseInt(userId) });
-      });
+    // Attach event handlers so that when a dropdown changes, an update is sent immediately.
+    $(document).on('change', 'select.lunchDefault, select.dinnerDefault', function() {
+      const day = $(this).attr('data-day');
+      // Get both lunch and dinner selections for the given day.
+      const lunchVal = $('select.lunchDefault[data-day="' + day + '"]').val();
+      const dinnerVal = $('select.dinnerDefault[data-day="' + day + '"]').val();
+      const payload = [{
+        day_of_week: parseInt(day),
+        lunch: parseInt(lunchVal),
+        dinner: parseInt(dinnerVal),
+        user_id: parseInt(userId)
+      }];
+      console.log('Updating defaults for day ' + day, payload);
+      // Send update using the bulk update endpoint with a single-element array.
       $.ajax({
         url: '/api/user-defaults/' + userId,
         method: 'PUT',
         contentType: 'application/json',
-        data: JSON.stringify(defaults),
+        data: JSON.stringify(payload),
         success: function(response) {
-          alert('User defaults updated successfully.');
-          window.location.href = '/';
+          console.log('User defaults updated for day ' + day);
+          // Optionally, reload defaults to reflect any changes.
+          loadUserDefaults();
         },
         error: function(err) {
-          alert('Failed to update user defaults.');
+          alert('Failed to update user defaults for day ' + day);
           console.error(err);
         }
       });

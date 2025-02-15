@@ -8,7 +8,7 @@
   <style>
     body {
       font-family: Arial, sans-serif;
-      font-size: 16px; /* You can adjust the base font size if needed */
+      font-size: 16px; /* Adjust base font size if needed */
     }
     .form-container {
       margin-bottom: 20px;
@@ -20,22 +20,19 @@
     table {
       border-collapse: collapse;
       width: 100%;
-      min-width: 800px; /* Ensure the table is wide enough to require horizontal scrolling on small screens */
+      min-width: 800px; /* Force horizontal scroll on small screens */
       margin-bottom: 20px;
     }
     th, td {
       border: 1px solid #ccc;
       padding: 6px;
       text-align: center;
-      white-space: nowrap; /* Prevent wrapping of table cell content */
+      white-space: nowrap; /* Prevent wrapping of cell content */
     }
     th {
       background-color: #f2f2f2;
     }
-    .update-container {
-      margin-top: 20px;
-    }
-    /* Highlight individual cells if they differ from default */
+    /* Highlight individual cells if their value differs from default */
     .cell-highlight {
       background-color: yellow !important;
     }
@@ -53,14 +50,11 @@
     <label for="startDate">Start Date (YYYY-MM-DD): </label>
     <input type="text" id="startDate">
     <label for="days">Number of Days: </label>
-    <input type="number" id="days" value="7" min="1">
+    <input type="number" id="days" value="30" min="1">
     <button id="loadSchedule">Load Schedule</button>
   </div>
   <!-- Wrap the schedule table in a container for horizontal scrolling -->
   <div class="table-container" id="scheduleContainer"></div>
-  <div class="update-container">
-    <button id="updateAll">Update All</button>
-  </div>
 
   <!-- Include jQuery from CDN -->
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
@@ -115,7 +109,6 @@
       const firstDateMeals = data[dates[0]];
       const users = firstDateMeals.slice().sort((a, b) => a.user_id - b.user_id);
 
-      // Create table.
       let tableHtml = '<table>';
       // Header row 1: Date | each user (as link with colspan=2)
       tableHtml += '<thead><tr><th>Date</th>';
@@ -171,7 +164,7 @@
             dinnerSelect += '>' + mealOptions[key] + '</option>';
           }
           dinnerSelect += '</select>';
-          // Highlight cell if value differs from default.
+          // Set cell classes based on whether the value differs from the default.
           let lunchCellClass = (meal.lunch !== meal.defaultLunch) ? 'cell-highlight' : '';
           let dinnerCellClass = (meal.dinner !== meal.defaultDinner) ? 'cell-highlight' : '';
           tableHtml += '<td class="' + lunchCellClass + '">' + lunchSelect + '</td>';
@@ -183,40 +176,40 @@
       $('#scheduleContainer').html(tableHtml);
     }
 
-    // When the "Update All" button is clicked, gather all changes and send a bulk update.
-    $('#updateAll').click(function() {
-      const updates = [];
-      $('#scheduleContainer tbody tr').each(function() {
-        const date = $(this).find('td:first').text().split(" ")[0];
-        $(this).find('select.lunchSelect').each(function() {
-          const userId = $(this).attr('data-user-id');
-          const lunch = parseInt($(this).val());
-          const $dinner = $(this).closest('td').next().find('select.dinnerSelect');
-          const dinner = parseInt($dinner.val());
-          updates.push({
-            user_id: parseInt(userId),
-            date: date,
-            lunch: lunch,
-            dinner: dinner
-          });
-        });
-      });
+    // Attach event handler so that whenever a dropdown changes, update that meal immediately.
+    $(document).on('change', 'select.lunchSelect, select.dinnerSelect', function() {
+      // Get the user id and date from the changed dropdown.
+      const userId = $(this).attr('data-user-id');
+      const date = $(this).attr('data-date');
+      // Retrieve both lunch and dinner dropdown values for this user and date.
+      const lunchVal = $('select.lunchSelect[data-user-id="' + userId + '"][data-date="' + date + '"]').val();
+      const dinnerVal = $('select.dinnerSelect[data-user-id="' + userId + '"][data-date="' + date + '"]').val();
+      const payload = {
+        user_id: parseInt(userId),
+        date: date,
+        lunch: parseInt(lunchVal),
+        dinner: parseInt(dinnerVal)
+      };
+      console.log('Updating meal for user ' + userId + ' on ' + date, payload);
+      // Use the bulk update endpoint with a single-element array.
       $.ajax({
         url: '/api/meals/bulk-update',
         method: 'PUT',
         contentType: 'application/json',
-        data: JSON.stringify(updates),
+        data: JSON.stringify([payload]),
         success: function(response) {
-          alert('Meals updated successfully.');
+          console.log('Meal updated for user ' + userId + ' on ' + date);
+          // Optionally, reload the schedule to refresh highlights.
           loadSchedule();
         },
         error: function(err) {
-          alert('Failed to update meals.');
+          alert('Failed to update meal for user ' + userId);
           console.error(err);
         }
       });
     });
 
+    // Load schedule on initial page load and when the "Load Schedule" button is clicked.
     $(document).ready(function() {
       loadSchedule();
     });
