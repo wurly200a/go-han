@@ -32,15 +32,31 @@
     th {
       background-color: #f2f2f2;
     }
-    /* Highlight individual cells if their value differs from default */
-    .cell-highlight {
-      background-color: yellow !important;
+    /* Make the first column sticky */
+    table th:first-child,
+    table td:first-child {
+      position: sticky;
+      left: 0;
+      z-index: 2;
     }
+    /* Increase z-index for header sticky cell */
+    table thead th:first-child {
+      z-index: 3;
+    }
+    /* For non-weekend date cells, set background white */
+    table td:not(.sunday):not(.saturday) {
+      background-color: #fff;
+    }
+    /* Weekend coloring */
     .saturday {
-      background-color: #add8e6; /* Light blue for Saturday */
+      background-color: #add8e6 !important; /* Light blue */
     }
     .sunday {
-      background-color: #ffc0cb; /* Pink for Sunday */
+      background-color: #ffc0cb !important; /* Pink */
+    }
+    /* Highlight individual cells if they differ from default */
+    .cell-highlight {
+      background-color: yellow !important;
     }
   </style>
 </head>
@@ -131,6 +147,7 @@
         const weekday = d.getDay(); // 0: Sunday, ... 6: Saturday
         const dayName = weekdayNames[weekday];
         const dateDisplay = date + ' (' + dayName + ')';
+        // Determine class for the date cell based on weekday.
         let dateClass = "";
         if (weekday === 0) dateClass = "sunday";
         else if (weekday === 6) dateClass = "saturday";
@@ -164,7 +181,7 @@
             dinnerSelect += '>' + mealOptions[key] + '</option>';
           }
           dinnerSelect += '</select>';
-          // Set cell classes based on whether the value differs from the default.
+          // Highlight cell if value differs from default.
           let lunchCellClass = (meal.lunch !== meal.defaultLunch) ? 'cell-highlight' : '';
           let dinnerCellClass = (meal.dinner !== meal.defaultDinner) ? 'cell-highlight' : '';
           tableHtml += '<td class="' + lunchCellClass + '">' + lunchSelect + '</td>';
@@ -178,10 +195,8 @@
 
     // Attach event handler so that whenever a dropdown changes, update that meal immediately.
     $(document).on('change', 'select.lunchSelect, select.dinnerSelect', function() {
-      // Get the user id and date from the changed dropdown.
       const userId = $(this).attr('data-user-id');
       const date = $(this).attr('data-date');
-      // Retrieve both lunch and dinner dropdown values for this user and date.
       const lunchVal = $('select.lunchSelect[data-user-id="' + userId + '"][data-date="' + date + '"]').val();
       const dinnerVal = $('select.dinnerSelect[data-user-id="' + userId + '"][data-date="' + date + '"]').val();
       const payload = {
@@ -199,7 +214,7 @@
         data: JSON.stringify([payload]),
         success: function(response) {
           console.log('Meal updated for user ' + userId + ' on ' + date);
-          // Optionally, reload the schedule to refresh highlights.
+          // Optionally, reload the schedule to refresh cell highlights.
           loadSchedule();
         },
         error: function(err) {
