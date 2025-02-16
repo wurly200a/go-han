@@ -68,6 +68,10 @@
     .cell-highlight {
       background-color: yellow !important;
     }
+    /* Gray background for cells with no data (value 0) */
+    .cell-gray {
+      background-color: #d3d3d3 !important;
+    }
   </style>
 </head>
 <body>
@@ -126,15 +130,6 @@
     currentLang = getCookie("lang") || "en";
     $('#languageSelect').val(currentLang);
 
-    // Update UI texts (if needed) based on language.
-    function updateLanguage() {
-      const t = translations[currentLang];
-      $('#pageTitle').text(t.pageTitle);
-      $('#startDateLabel').text(t.startDateLabel);
-      $('#daysLabel').text(t.daysLabel);
-      $('#loadSchedule').text(t.loadScheduleButton);
-    }
-
     // Translation dictionary.
     const translations = {
       en: {
@@ -157,11 +152,20 @@
       }
     };
 
-    // Language dropdown change event: update cookie, set language, and reload table.
+    // Update UI texts based on current language.
+    function updateLanguage() {
+      const t = translations[currentLang];
+      $('#pageTitle').text(t.pageTitle);
+      $('#startDateLabel').text(t.startDateLabel);
+      $('#daysLabel').text(t.daysLabel);
+      $('#loadSchedule').text(t.loadScheduleButton);
+    }
+
+    // Language dropdown change event.
     $('#languageSelect').change(function() {
       currentLang = $(this).val();
       setCookie("lang", currentLang, 365);
-      // Reload the schedule table if data is already loaded.
+      updateLanguage();
       if (scheduleData !== null) {
         renderSchedule(scheduleData);
       }
@@ -250,7 +254,7 @@
         dates.forEach(date => {
           tableHtml += '<tr>';
           const d = new Date(date);
-          const weekday = d.getDay(); // 0: Sunday, ... 6: Saturday
+          const weekday = d.getDay(); // 0: Sunday ... 6: Saturday
           const dayName = weekdayNames[weekday];
           // Format display as MM/DD (drop the year)
           const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -268,13 +272,29 @@
           });
 
           users.forEach(user => {
-            // The API returns numeric values for lunch and dinner.
-            const meal = mealMapping[user.user_id] || { lunch: 1, dinner: 1, defaultLunch: 1, defaultDinner: 1 };
+            // The API returns numeric values.
+            const meal = mealMapping[user.user_id] || { lunch: 0, dinner: 0, defaultLunch: 0, defaultDinner: 0 };
+            // If no data (value 0), we want to display the default value.
+            const displayedLunch = meal.lunch === 0 ? meal.defaultLunch : meal.lunch;
+            const displayedDinner = meal.dinner === 0 ? meal.defaultDinner : meal.dinner;
+            // Determine cell classes.
+            let lunchCellClass = "";
+            let dinnerCellClass = "";
+            if (meal.lunch === 0) {
+              lunchCellClass = "cell-gray";
+            } else if (meal.lunch !== meal.defaultLunch) {
+              lunchCellClass = "cell-highlight";
+            }
+            if (meal.dinner === 0) {
+              dinnerCellClass = "cell-gray";
+            } else if (meal.dinner !== meal.defaultDinner) {
+              dinnerCellClass = "cell-highlight";
+            }
             // Build lunch dropdown.
             let lunchSelect = '<select class="lunchSelect" data-user-id="' + user.user_id + '" data-date="' + date + '">';
             for (let key in mealOptions) {
               lunchSelect += '<option value="' + key + '"';
-              if (meal.lunch === parseInt(key)) {
+              if (displayedLunch === parseInt(key)) {
                 lunchSelect += ' selected';
               }
               lunchSelect += '>' + mealOptions[key] + '</option>';
@@ -284,14 +304,12 @@
             let dinnerSelect = '<select class="dinnerSelect" data-user-id="' + user.user_id + '" data-date="' + date + '">';
             for (let key in mealOptions) {
               dinnerSelect += '<option value="' + key + '"';
-              if (meal.dinner === parseInt(key)) {
+              if (displayedDinner === parseInt(key)) {
                 dinnerSelect += ' selected';
               }
               dinnerSelect += '>' + mealOptions[key] + '</option>';
             }
             dinnerSelect += '</select>';
-            let lunchCellClass = (meal.lunch !== meal.defaultLunch) ? 'cell-highlight' : '';
-            let dinnerCellClass = (meal.dinner !== meal.defaultDinner) ? 'cell-highlight' : '';
             tableHtml += '<td class="' + lunchCellClass + '">' + lunchSelect + '</td>';
             tableHtml += '<td class="' + dinnerCellClass + '">' + dinnerSelect + '</td>';
           });
@@ -301,7 +319,7 @@
         $('#scheduleContainer').html(tableHtml);
       }
 
-      // Attach event handler so that whenever a dropdown changes, update that meal immediately.
+      // Attach event handler so that when a dropdown changes, update that meal immediately.
       $(document).on('change', 'select.lunchSelect, select.dinnerSelect', function() {
         const userId = $(this).attr('data-user-id');
         const date = $(this).attr('data-date');

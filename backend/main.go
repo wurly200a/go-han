@@ -220,8 +220,8 @@ func getMeals(c *gin.Context) {
 			m := Meal{
 				UserID:        userID,
 				UserName:      userName,
-				Lunch:         defaultLunch,
-				Dinner:        defaultDinner,
+				Lunch:         0,
+				Dinner:        0,
 				DefaultLunch:  defaultLunch,
 				DefaultDinner: defaultDinner,
 			}

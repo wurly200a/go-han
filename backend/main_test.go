@@ -98,7 +98,7 @@ func TestGetMeals(t *testing.T) {
 		AddRow(2, "2025-02-16", 2, 1). // Paul, Sun, 'None'   for dinner
 		AddRow(1, "2025-02-17", 1, 3). // John, Mon, 'Obento' for lunch
 		AddRow(1, "2025-02-17", 2, 1). // John, Mon, 'None'   for dinner
-		AddRow(2, "2025-02-17", 1, 1). // Paul, Mon, 'Home'   for lunch
+//		AddRow(2, "2025-02-17", 1, 1). // Paul, Mon, 'Home'   for lunch
 		AddRow(2, "2025-02-17", 2, 2)  // Paul, Mon, 'Home'   for dinner
 	queryMeals := `
         SELECT 
@@ -154,7 +154,7 @@ func TestGetMeals(t *testing.T) {
         {
           "user_id": 2,
           "user_name": "Paul",
-          "lunch": 1,
+          "lunch": 0,
           "dinner": 2,
           "defaultLunch": 2,
           "defaultDinner": 2
