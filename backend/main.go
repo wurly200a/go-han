@@ -263,16 +263,20 @@ func bulkUpdateMeals(c *gin.Context) {
 	}
 	defer stmt.Close()
 	for _, m := range updates {
-		if _, err := stmt.Exec(m.UserID, m.Date, 1, m.Lunch ); err != nil {
-			tx.Rollback()
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
+		if m.Lunch != 0 {
+			if _, err := stmt.Exec(m.UserID, m.Date, 1, m.Lunch ); err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
 		}
 
-		if _, err := stmt.Exec(m.UserID, m.Date, 2, m.Dinner); err != nil {
-			tx.Rollback()
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
+		if m.Dinner != 0 {
+			if _, err := stmt.Exec(m.UserID, m.Date, 2, m.Dinner); err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
 		}
 	}
 	if err := tx.Commit(); err != nil {

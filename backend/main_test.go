@@ -180,11 +180,15 @@ func TestBulkUpdateMeals(t *testing.T) {
 	prep.ExpectExec().WithArgs(1, "2024-02-04", 2, 2).WillReturnResult(sqlmock.NewResult(2, 1))
 	prep.ExpectExec().WithArgs(2, "2024-02-04", 1, 1).WillReturnResult(sqlmock.NewResult(3, 1))
 	prep.ExpectExec().WithArgs(2, "2024-02-04", 2, 3).WillReturnResult(sqlmock.NewResult(4, 1))
+	prep.ExpectExec().WithArgs(1, "2024-02-05", 1, 2).WillReturnResult(sqlmock.NewResult(1, 1))
+	prep.ExpectExec().WithArgs(2, "2024-02-05", 2, 1).WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
 	updates := []MealUpdate{
 		{UserID: 1, Date: "2024-02-04", Lunch: 3, Dinner: 2},
 		{UserID: 2, Date: "2024-02-04", Lunch: 1, Dinner: 3},
+		{UserID: 1, Date: "2024-02-05", Lunch: 2},
+		{UserID: 2, Date: "2024-02-05", Dinner: 1},
 	}
 	payload, _ := json.Marshal(updates)
 	r := setupRouter()
