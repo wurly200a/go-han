@@ -64,13 +64,16 @@
     .sunday {
       background-color: #ffc0cb !important; /* Pink */
     }
+    .weekday {
+      background-color: #f2f2f2 !important; /* gray */
+    }
     /* Highlight cells if value differs from default */
     .cell-highlight {
       background-color: yellow !important;
     }
     /* Gray background for cells with no data (value 0) */
     .cell-gray {
-      background-color: #d3d3d3 !important;
+      background-color: #f2f2f2 !important;
     }
   </style>
 </head>
@@ -127,7 +130,7 @@
       return "";
     }
     // Retrieve language from cookie if available.
-    currentLang = getCookie("lang") || "en";
+    currentLang = getCookie("lang") || "ja";
     $('#languageSelect').val(currentLang);
 
     // Translation dictionary.
@@ -263,6 +266,7 @@
           let dateClass = "";
           if (weekday === 0) dateClass = "sunday";
           else if (weekday === 6) dateClass = "saturday";
+          else dateClass = "weekday";
           tableHtml += '<td class="' + dateClass + '">' + dateDisplay + '</td>';
 
           // Create a mapping for this date.
