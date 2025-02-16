@@ -2,8 +2,8 @@ package main
 
 import (
 	"database/sql"
-	"encoding/json"
-	"log"
+//	"encoding/json"
+//	"log"
 	"net/http"
 	"os"
 	"sort"
@@ -81,7 +81,7 @@ func getMeals(c *gin.Context) {
 
 	// Retrieve user information.
 	usersQuery := "SELECT id, name FROM users"
-	log.Printf("Executing SQL: %s", usersQuery)
+//	log.Printf("Executing SQL: %s", usersQuery)
 	userRows, err := db.Query(usersQuery)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -99,7 +99,7 @@ func getMeals(c *gin.Context) {
 		}
 		users[id] = name
 	}
-	log.Printf("users: %v", users)
+//	log.Printf("users: %v", users)
 
 	// Retrieve user defaults.
 	defaultsQuery := "SELECT user_id, day_of_week, lunch, dinner FROM user_defaults"
@@ -138,7 +138,7 @@ func getMeals(c *gin.Context) {
             ON m.dinner = dinner_trans.meal_option_id AND dinner_trans.language_code = 'ja'
         WHERE m.date BETWEEN $1 AND $2
         ORDER BY m.date, m.user_id`
-	log.Printf("Executing SQL: %s with params: %s, %s", mealsQuery, startDate.Format("2006-01-02"), endDate)
+//	log.Printf("Executing SQL: %s with params: %s, %s", mealsQuery, startDate.Format("2006-01-02"), endDate)
 
 	rows, err := db.Query(mealsQuery, startDate.Format("2006-01-02"), endDate)
 	if err != nil {
@@ -174,7 +174,7 @@ func getMeals(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "unsupported date type"})
 			return
 		}
-		log.Printf("User ID: %d, Date: %s, Lunch: %s, Dinner: %s", mr.userID, mr.date.Format("2006-01-02"), mr.lunch, mr.dinner)
+//		log.Printf("User ID: %d, Date: %s, Lunch: %s, Dinner: %s", mr.userID, mr.date.Format("2006-01-02"), mr.lunch, mr.dinner)
 		mealRows = append(mealRows, mr)
 	}
 
@@ -221,8 +221,8 @@ func getMeals(c *gin.Context) {
 			return finalMeals[dateStr][i].UserID < finalMeals[dateStr][j].UserID
 		})
 	}
-	responseJSON, _ := json.Marshal(finalMeals)
-	log.Printf("Result: %s", responseJSON)
+//	responseJSON, _ := json.Marshal(finalMeals)
+//	log.Printf("Result: %s", responseJSON)
 
 	c.JSON(http.StatusOK, finalMeals)
 }
