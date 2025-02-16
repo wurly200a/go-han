@@ -20,10 +20,10 @@ var db *sql.DB
 type Meal struct {
 	UserID        int    `json:"user_id"`
 	UserName      string `json:"user_name"`
-	Lunch         string `json:"lunch"`
-	Dinner        string `json:"dinner"`
-	DefaultLunch  string `json:"defaultLunch"`
-	DefaultDinner string `json:"defaultDinner"`
+	Lunch         int    `json:"lunch"`
+	Dinner        int    `json:"dinner"`
+	DefaultLunch  int    `json:"defaultLunch"`
+	DefaultDinner int    `json:"defaultDinner"`
 }
 
 // MealUpdate represents an update for a meal record.
@@ -44,11 +44,11 @@ type UserDefault struct {
 }
 
 // Mapping from meal option id to Japanese text.
-var mealOptionText = map[int]string{
-	1: "なし",
-	2: "家",
-	3: "弁当",
-}
+//var mealOptionText = map[int]string{
+//	1: "なし",
+//	2: "家",
+//	3: "弁当",
+//}
 
 func healthCheck(c *gin.Context) {
 	if err := db.Ping(); err != nil {
@@ -129,13 +129,9 @@ func getMeals(c *gin.Context) {
         SELECT 
             m.user_id, 
             m.date, 
-            lunch_trans.name AS lunch, 
-            dinner_trans.name AS dinner
+            m.lunch,
+            m.dinner
         FROM meals m
-        LEFT JOIN meal_option_translations lunch_trans 
-            ON m.lunch = lunch_trans.meal_option_id AND lunch_trans.language_code = 'ja'
-        LEFT JOIN meal_option_translations dinner_trans 
-            ON m.dinner = dinner_trans.meal_option_id AND dinner_trans.language_code = 'ja'
         WHERE m.date BETWEEN $1 AND $2
         ORDER BY m.date, m.user_id`
 //	log.Printf("Executing SQL: %s with params: %s, %s", mealsQuery, startDate.Format("2006-01-02"), endDate)
@@ -150,8 +146,8 @@ func getMeals(c *gin.Context) {
 	type mealRow struct {
 		userID int
 		date   time.Time
-		lunch  string
-		dinner string
+		lunch  int
+		dinner int
 	}
 	var mealRows []mealRow
 	for rows.Next() {
@@ -196,11 +192,11 @@ func getMeals(c *gin.Context) {
 		weekday := int(currentDate.Weekday()) // 0: Sunday ... 6: Saturday
 		for userID, userName := range users {
 			// Get default from userDefaults.
-			defaultLunch := "なし"
-			defaultDinner := "なし"
+			defaultLunch := 1
+			defaultDinner := 1
 			if ud, ok := userDefaults[userID][weekday]; ok {
-				defaultLunch = mealOptionText[ud.Lunch]
-				defaultDinner = mealOptionText[ud.Dinner]
+				defaultLunch = ud.Lunch
+				defaultDinner = ud.Dinner
 			}
 			m := Meal{
 				UserID:        userID,

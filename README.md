@@ -7,8 +7,7 @@ Copy a template file and customise it for your environment
 
 ```
 cp .env.example .env
-cp db/01_create_database.sql.example db/01_create_database.sql
-cp db/03_init_data.sql.example db/03_init_data.sql
+db_init.sh
 ```
 
 ## Run

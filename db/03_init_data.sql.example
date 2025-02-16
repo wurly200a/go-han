@@ -2,12 +2,6 @@
 -- Insert default meal options
 INSERT INTO meal_options (id) VALUES (1), (2), (3);
 
--- Insert translations for meal options
-INSERT INTO meal_option_translations (meal_option_id, language_code, name) VALUES
-(1, 'en', 'None'),  (1, 'ja', 'なし'),
-(2, 'en', 'Home'),  (2, 'ja', '家'),
-(3, 'en', 'Obento'),(3, 'ja', '弁当');
-
 -- Insert sample users
 INSERT INTO users (name, age) VALUES ('Saburo', 16), ('Jiro', 19), ('Taro', 21), ('Father', 47);
 

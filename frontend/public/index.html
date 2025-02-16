@@ -192,10 +192,7 @@
       }
       $('#startDate').val(getToday());
 
-      // Japanese weekday names (fallback, not used directly now).
-      const defaultWeekdayNames = ["日", "月", "火", "水", "木", "金", "土"];
-
-      // Meal options mapping.
+      // Meal options mapping (numeric keys with text labels).
       const mealOptions = {
         1: "なし",
         2: "家",
@@ -271,12 +268,13 @@
           });
 
           users.forEach(user => {
-            const meal = mealMapping[user.user_id] || { lunch: "なし", dinner: "なし", defaultLunch: "なし", defaultDinner: "なし" };
+            // The API returns numeric values for lunch and dinner.
+            const meal = mealMapping[user.user_id] || { lunch: 1, dinner: 1, defaultLunch: 1, defaultDinner: 1 };
             // Build lunch dropdown.
             let lunchSelect = '<select class="lunchSelect" data-user-id="' + user.user_id + '" data-date="' + date + '">';
             for (let key in mealOptions) {
               lunchSelect += '<option value="' + key + '"';
-              if (meal.lunch === mealOptions[key]) {
+              if (meal.lunch === parseInt(key)) {
                 lunchSelect += ' selected';
               }
               lunchSelect += '>' + mealOptions[key] + '</option>';
@@ -286,7 +284,7 @@
             let dinnerSelect = '<select class="dinnerSelect" data-user-id="' + user.user_id + '" data-date="' + date + '">';
             for (let key in mealOptions) {
               dinnerSelect += '<option value="' + key + '"';
-              if (meal.dinner === mealOptions[key]) {
+              if (meal.dinner === parseInt(key)) {
                 dinnerSelect += ' selected';
               }
               dinnerSelect += '>' + mealOptions[key] + '</option>';

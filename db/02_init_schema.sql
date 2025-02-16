@@ -11,15 +11,6 @@ CREATE TABLE IF NOT EXISTS meal_options (
     id SERIAL PRIMARY KEY
 );
 
--- Meal option translations table for multilingual support
--- Each meal option can have multiple translations based on language code
-CREATE TABLE IF NOT EXISTS meal_option_translations (
-    meal_option_id INT REFERENCES meal_options(id) ON DELETE CASCADE,
-    language_code TEXT NOT NULL,  -- Example: 'ja' for Japanese, 'en' for English
-    name TEXT NOT NULL,           -- Translated meal option name
-    PRIMARY KEY (meal_option_id, language_code)
-);
-
 -- Meals table to store users' meal choices
 CREATE TABLE IF NOT EXISTS meals (
     id SERIAL PRIMARY KEY,

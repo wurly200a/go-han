@@ -85,21 +85,17 @@ func TestGetMeals(t *testing.T) {
 	// --- Query: meals ---
 	// Actual meal records that override the defaults.
 	rowsMeals := sqlmock.NewRows([]string{"user_id", "date", "lunch", "dinner"}).
-		AddRow(1, "2024-02-04", "弁当", "家").
-		AddRow(2, "2024-02-04", "なし", "弁当").
-		AddRow(3, "2024-02-04", "弁当", "なし").
-		AddRow(4, "2024-02-04", "弁当", "なし")
+		AddRow(1, "2024-02-04", 3, 2).
+		AddRow(2, "2024-02-04", 1, 3).
+		AddRow(3, "2024-02-04", 3, 1).
+		AddRow(4, "2024-02-04", 3, 1)
 	queryMeals := `
         SELECT 
             m.user_id, 
             m.date, 
-            lunch_trans.name AS lunch, 
-            dinner_trans.name AS dinner
+            m.lunch,
+            m.dinner
         FROM meals m
-        LEFT JOIN meal_option_translations lunch_trans 
-            ON m.lunch = lunch_trans.meal_option_id AND lunch_trans.language_code = 'ja'
-        LEFT JOIN meal_option_translations dinner_trans 
-            ON m.dinner = dinner_trans.meal_option_id AND dinner_trans.language_code = 'ja'
         WHERE m.date BETWEEN $1 AND $2
         ORDER BY m.date, m.user_id`
 	t.Log(regexp.QuoteMeta(queryMeals))
@@ -121,34 +117,34 @@ func TestGetMeals(t *testing.T) {
         {
           "user_id": 1,
           "user_name": "Saburo",
-          "lunch": "弁当",
-          "dinner": "家",
-          "defaultLunch": "弁当",
-          "defaultDinner": "家"
+          "lunch": 3,
+          "dinner": 2,
+          "defaultLunch": 3,
+          "defaultDinner": 2
         },
         {
           "user_id": 2,
           "user_name": "Jiro",
-          "lunch": "なし",
-          "dinner": "弁当",
-          "defaultLunch": "なし",
-          "defaultDinner": "弁当"
+          "lunch": 1,
+          "dinner": 3,
+          "defaultLunch": 1,
+          "defaultDinner": 3
         },
         {
           "user_id": 3,
           "user_name": "Taro",
-          "lunch": "弁当",
-          "dinner": "なし",
-          "defaultLunch": "弁当",
-          "defaultDinner": "なし"
+          "lunch": 3,
+          "dinner": 1,
+          "defaultLunch": 3,
+          "defaultDinner": 1
         },
         {
           "user_id": 4,
           "user_name": "Father",
-          "lunch": "弁当",
-          "dinner": "なし",
-          "defaultLunch": "弁当",
-          "defaultDinner": "なし"
+          "lunch": 3,
+          "dinner": 1,
+          "defaultLunch": 3,
+          "defaultDinner": 1
         }
       ]
     }`
