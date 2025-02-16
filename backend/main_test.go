@@ -60,22 +60,29 @@ func TestGetMeals(t *testing.T) {
 
 	// --- Query: users ---
 	rowsUsers := sqlmock.NewRows([]string{"id", "name"}).
-		AddRow(1, "Saburo").
-		AddRow(2, "Jiro").
-		AddRow(3, "Taro").
-		AddRow(4, "Father")
+		AddRow(1, "John").
+		AddRow(2, "Paul")
 	queryUsers := "SELECT id, name FROM users"
 	t.Log(regexp.QuoteMeta(queryUsers))
 	t.Log(rowsUsers)
 	mock.ExpectQuery(regexp.QuoteMeta(queryUsers)).WillReturnRows(rowsUsers)
 
 	// --- Query: user_defaults ---
-	// For example, for 2024-02-04 (Sunday, weekday 0), return each user's default.
 	rowsDefaults := sqlmock.NewRows([]string{"user_id", "day_of_week", "lunch", "dinner"}).
-		AddRow(1, 0, 3, 2). // Saburo: default: "弁当", "家"
-		AddRow(2, 0, 1, 3). // Jiro:   default: "なし", "弁当"
-		AddRow(3, 0, 3, 1). // Taro:   default: "弁当", "なし"
-		AddRow(4, 0, 3, 1)  // Father: default: "弁当", "なし"
+		AddRow(1, 0, 2, 2). // John, Sun, 'Home' for lunch, 'Home' for dinner
+		AddRow(1, 1, 1, 2). // John, Mon, 'None' for lunch, 'Home' for dinner
+		AddRow(1, 2, 1, 2). // John, Tue, 'None' for lunch, 'Home' for dinner
+		AddRow(1, 3, 1, 2). // John, Wed, 'None' for lunch, 'Home' for dinner
+		AddRow(1, 4, 1, 2). // John, Thu, 'None' for lunch, 'Home' for dinner
+		AddRow(1, 5, 1, 2). // John, Fri, 'None' for lunch, 'Home' for dinner
+		AddRow(1, 6, 2, 2). // John, Sat, 'Home' for lunch, 'Home' for dinner
+		AddRow(2, 0, 2, 2). // Paul, Sun, 'Home' for lunch, 'Home' for dinner
+		AddRow(2, 1, 2, 2). // Paul, Mon, 'Home' for lunch, 'Home' for dinner
+		AddRow(2, 2, 2, 2). // Paul, Tue, 'Home' for lunch, 'Home' for dinner
+		AddRow(2, 3, 2, 2). // Paul, Wed, 'Home' for lunch, 'Home' for dinner
+		AddRow(2, 4, 2, 2). // Paul, Thu, 'Home' for lunch, 'Home' for dinner
+		AddRow(2, 5, 2, 2). // Paul, Fri, 'Home' for lunch, 'Home' for dinner
+		AddRow(2, 6, 2, 2)  // Paul, Sat, 'Home' for lunch, 'Home' for dinner
 	// The current implementation of getMeals uses this query without a WHERE clause.
 	queryDefaults := "SELECT user_id, day_of_week, lunch, dinner FROM user_defaults"
 	t.Log(regexp.QuoteMeta(queryDefaults))
@@ -85,10 +92,10 @@ func TestGetMeals(t *testing.T) {
 	// --- Query: meals ---
 	// Actual meal records that override the defaults.
 	rowsMeals := sqlmock.NewRows([]string{"user_id", "date", "lunch", "dinner"}).
-		AddRow(1, "2024-02-04", 3, 2).
-		AddRow(2, "2024-02-04", 1, 3).
-		AddRow(3, "2024-02-04", 3, 1).
-		AddRow(4, "2024-02-04", 3, 1)
+		AddRow(1, "2025-02-16", 1, 1). // John, Sun, 'None'   for lunch, 'None' for dinner
+		AddRow(2, "2025-02-16", 1, 1). // Paul, Sun, 'None'   for lunch, 'None' for dinner
+		AddRow(1, "2025-02-17", 3, 1). // John, Mon, 'Obento' for lunch, 'None' for dinner
+		AddRow(2, "2025-02-17", 1, 2)  // Paul, Mon, 'Home'   for lunch, 'Home' for dinner
 	queryMeals := `
         SELECT 
             m.user_id, 
@@ -101,50 +108,52 @@ func TestGetMeals(t *testing.T) {
 	t.Log(regexp.QuoteMeta(queryMeals))
 	t.Log(rowsMeals)
 	mock.ExpectQuery(regexp.QuoteMeta(queryMeals)).
-		WithArgs("2024-02-04", "2024-02-04").
+		WithArgs("2025-02-16", "2025-02-17"). // Sunday and Monday
 		WillReturnRows(rowsMeals)
 
 	r := setupRouter()
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/api/meals?date=2024-02-04&days=1", nil)
+	req, _ := http.NewRequest("GET", "/api/meals?date=2025-02-16&days=2", nil)
 	r.ServeHTTP(w, req)
 	t.Log("\n", func() string { var b bytes.Buffer; json.Indent(&b, w.Body.Bytes(), "", "  "); return b.String() }())
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	// Expected JSON (including defaultLunch and defaultDinner fields).
 	expectedBody := `{
-      "2024-02-04": [
+      "2025-02-16": [
         {
           "user_id": 1,
-          "user_name": "Saburo",
-          "lunch": 3,
-          "dinner": 2,
-          "defaultLunch": 3,
+          "user_name": "John",
+          "lunch": 1,
+          "dinner": 1,
+          "defaultLunch": 2,
           "defaultDinner": 2
         },
         {
           "user_id": 2,
-          "user_name": "Jiro",
+          "user_name": "Paul",
           "lunch": 1,
-          "dinner": 3,
+          "dinner": 1,
+          "defaultLunch": 2,
+          "defaultDinner": 2
+        }
+      ],
+      "2025-02-17": [
+        {
+          "user_id": 1,
+          "user_name": "John",
+          "lunch": 3,
+          "dinner": 1,
           "defaultLunch": 1,
-          "defaultDinner": 3
+          "defaultDinner": 2
         },
         {
-          "user_id": 3,
-          "user_name": "Taro",
-          "lunch": 3,
-          "dinner": 1,
-          "defaultLunch": 3,
-          "defaultDinner": 1
-        },
-        {
-          "user_id": 4,
-          "user_name": "Father",
-          "lunch": 3,
-          "dinner": 1,
-          "defaultLunch": 3,
-          "defaultDinner": 1
+          "user_id": 2,
+          "user_name": "Paul",
+          "lunch": 1,
+          "dinner": 2,
+          "defaultLunch": 2,
+          "defaultDinner": 2
         }
       ]
     }`
