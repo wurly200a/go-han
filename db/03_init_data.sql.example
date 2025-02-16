@@ -5,7 +5,7 @@ INSERT INTO meal_periods (id) VALUES (1), (2);
 INSERT INTO meal_options (id) VALUES (1), (2), (3);
 
 -- Insert sample users
-INSERT INTO users (name, age) VALUES ('Saburo', 16), ('Jiro', 19), ('Taro', 21), ('Father', 47);
+INSERT INTO users (name) VALUES ('Saburo'), ('Jiro'), ('Taro'), ('Father');
 
 INSERT INTO user_defaults (user_id, day_of_week, lunch, dinner) VALUES
 (1, 0, 2, 2),

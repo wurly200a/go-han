@@ -1,8 +1,7 @@
 -- Users table to store user information
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
-    name TEXT NOT NULL,
-    age INT
+    name TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS meal_periods (
@@ -27,7 +26,7 @@ CREATE TABLE IF NOT EXISTS meals (
 
 CREATE TABLE IF NOT EXISTS user_defaults (
     user_id INT REFERENCES users(id) ON DELETE CASCADE,
-    day_of_week INT NOT NULL,  -- 0: 日, 1: 月, …, 6: 土
+    day_of_week INT NOT NULL,  -- 0: Sun, 1: Mon,... 6: Sat
     lunch INT,
     dinner INT,
     PRIMARY KEY (user_id, day_of_week)
