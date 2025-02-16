@@ -129,8 +129,8 @@ func getMeals(c *gin.Context) {
         SELECT 
             m.user_id, 
             m.date, 
-            m.lunch,
-            m.dinner
+            m.meal_period,
+            m.meal_option
         FROM meals m
         WHERE m.date BETWEEN $1 AND $2
         ORDER BY m.date, m.user_id`
@@ -146,14 +146,14 @@ func getMeals(c *gin.Context) {
 	type mealRow struct {
 		userID int
 		date   time.Time
-		lunch  int
-		dinner int
+		meal_period  int
+		meal_option int
 	}
 	var mealRows []mealRow
 	for rows.Next() {
 		var mr mealRow
 		var dateVal interface{}
-		if err := rows.Scan(&mr.userID, &dateVal, &mr.lunch, &mr.dinner); err != nil {
+		if err := rows.Scan(&mr.userID, &dateVal, &mr.meal_period, &mr.meal_option); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -175,14 +175,33 @@ func getMeals(c *gin.Context) {
 	}
 
 	// Build mapping of actual meal records.
-	mealsData := make(map[string]map[int]mealRow)
-	for _, mr := range mealRows {
-		dateStr := mr.date.Format("2006-01-02")
-		if mealsData[dateStr] == nil {
-			mealsData[dateStr] = make(map[int]mealRow)
-		}
-		mealsData[dateStr][mr.userID] = mr
+	type mealRow2 struct {
+		userID int
+		date   time.Time
+		lunch  int
+		dinner int
 	}
+
+	mealsData := make(map[string]map[int]mealRow2)
+
+    for _, mr := range mealRows {
+        dateStr := mr.date.Format("2006-01-02")
+        if mealsData[dateStr] == nil {
+            mealsData[dateStr] = make(map[int]mealRow2)
+        }
+        // Retrieve current value (or zero value if not set)
+        current, ok := mealsData[dateStr][mr.userID]
+        if !ok {
+            current = mealRow2{userID: mr.userID, date: mr.date}
+        }
+        if mr.meal_period == 1 {
+            current.lunch = mr.meal_option
+        } else if mr.meal_period == 2 {
+            current.dinner = mr.meal_option
+        }
+        // Write back to the map
+        mealsData[dateStr][mr.userID] = current
+    }
 
 	// Build final result.
 	finalMeals := make(map[string][]Meal)
@@ -235,7 +254,8 @@ func bulkUpdateMeals(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	stmt, err := tx.Prepare("INSERT INTO meals (user_id, date, lunch, dinner) VALUES ($1, $2, $3, $4) ON CONFLICT (user_id, date) DO UPDATE SET lunch = EXCLUDED.lunch, dinner = EXCLUDED.dinner")
+//	stmt, err := tx.Prepare("INSERT INTO meals (user_id, date, lunch, dinner) VALUES ($1, $2, $3, $4) ON CONFLICT (user_id, date) DO UPDATE SET lunch = EXCLUDED.lunch, dinner = EXCLUDED.dinner")
+	stmt, err := tx.Prepare("INSERT INTO meals (user_id, date, meal_period, meal_option) VALUES ($1, $2, $3, $4) ON CONFLICT (user_id, date, meal_period) DO UPDATE SET meal_option = EXCLUDED.meal_option")
 	if err != nil {
 		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -243,7 +263,13 @@ func bulkUpdateMeals(c *gin.Context) {
 	}
 	defer stmt.Close()
 	for _, m := range updates {
-		if _, err := stmt.Exec(m.UserID, m.Date, m.Lunch, m.Dinner); err != nil {
+		if _, err := stmt.Exec(m.UserID, m.Date, 1, m.Lunch ); err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		if _, err := stmt.Exec(m.UserID, m.Date, 2, m.Dinner); err != nil {
 			tx.Rollback()
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return

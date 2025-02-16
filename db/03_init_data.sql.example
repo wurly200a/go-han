@@ -1,4 +1,6 @@
 
+INSERT INTO meal_periods (id) VALUES (1), (2);
+
 -- Insert default meal options
 INSERT INTO meal_options (id) VALUES (1), (2), (3);
 
@@ -36,9 +38,14 @@ INSERT INTO user_defaults (user_id, day_of_week, lunch, dinner) VALUES
 (4, 6, 2, 2);
 
 -- Insert sample meal records (using meal_options IDs)
-INSERT INTO meals (user_id, date, lunch, dinner) VALUES
-(1, '2024-02-04', 3, 2),  -- 'Obento' for lunch, 'Home' for dinner
-(1, '2024-02-05', 3, 1),  -- 'Obento' for lunch, 'None' for dinner
-(2, '2024-02-04', 1, 3),  -- 'None' for lunch, 'Obento' for dinner
-(3, '2024-02-04', 3, 1),  -- 'Obento' for lunch, 'None' for dinner
-(4, '2024-02-04', 3, 1);  -- 'Obento' for lunch, 'None' for dinner
+INSERT INTO meals (user_id, date, meal_period, meal_option) VALUES
+(1, '2024-02-04', 1, 3),  -- 'Obento' for lunch
+(1, '2024-02-04', 2, 2),  -- 'Home' for dinner
+(1, '2024-02-05', 1, 3),  -- 'Obento' for lunch
+(1, '2024-02-05', 2, 1),  -- 'None' for dinner
+(2, '2024-02-04', 1, 1),  -- 'None' for lunch
+(2, '2024-02-04', 2, 3),  -- 'Obento' for dinner
+(3, '2024-02-04', 1, 3),  -- 'Obento' for lunch
+(3, '2024-02-04', 2, 1),  -- 'None' for dinner
+(4, '2024-02-04', 1, 3),  -- 'Obento' for lunch
+(4, '2024-02-04', 2, 1);  -- 'None' for dinner

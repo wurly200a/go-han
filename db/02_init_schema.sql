@@ -5,6 +5,10 @@ CREATE TABLE IF NOT EXISTS users (
     age INT
 );
 
+CREATE TABLE IF NOT EXISTS meal_periods (
+    id SERIAL PRIMARY KEY
+);
+
 -- Meal options table (Master data)
 -- This stores unique meal options (e.g., None, Home, Obento)
 CREATE TABLE IF NOT EXISTS meal_options (
@@ -16,9 +20,9 @@ CREATE TABLE IF NOT EXISTS meals (
     id SERIAL PRIMARY KEY,
     user_id INT REFERENCES users(id) ON DELETE CASCADE,  -- Foreign key to users table
     date DATE NOT NULL,  -- The date of the meal
-    lunch INT REFERENCES meal_options(id) ON DELETE SET NULL,  -- Lunch option (referencing meal_options)
-    dinner INT REFERENCES meal_options(id) ON DELETE SET NULL,  -- Dinner option (referencing meal_options)
-    UNIQUE (user_id, date)  -- Ensures one meal record per user per day
+    meal_period INT REFERENCES meal_periods(id) ON DELETE SET NULL,  -- 0: lunch, 1: dinner
+    meal_option INT REFERENCES meal_options(id) ON DELETE SET NULL,  -- Meal option (referencing meal_options)
+    UNIQUE (user_id, date, meal_period)
 );
 
 CREATE TABLE IF NOT EXISTS user_defaults (

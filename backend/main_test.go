@@ -91,17 +91,21 @@ func TestGetMeals(t *testing.T) {
 
 	// --- Query: meals ---
 	// Actual meal records that override the defaults.
-	rowsMeals := sqlmock.NewRows([]string{"user_id", "date", "lunch", "dinner"}).
-		AddRow(1, "2025-02-16", 1, 1). // John, Sun, 'None'   for lunch, 'None' for dinner
-		AddRow(2, "2025-02-16", 1, 1). // Paul, Sun, 'None'   for lunch, 'None' for dinner
-		AddRow(1, "2025-02-17", 3, 1). // John, Mon, 'Obento' for lunch, 'None' for dinner
-		AddRow(2, "2025-02-17", 1, 2)  // Paul, Mon, 'Home'   for lunch, 'Home' for dinner
+	rowsMeals := sqlmock.NewRows([]string{"user_id", "date", "meal_period", "meal_option"}).
+		AddRow(1, "2025-02-16", 1, 1). // John, Sun, 'None'   for lunch
+		AddRow(1, "2025-02-16", 2, 1). // John, Sun, 'None'   for dinner
+		AddRow(2, "2025-02-16", 1, 1). // Paul, Sun, 'None'   for lunch
+		AddRow(2, "2025-02-16", 2, 1). // Paul, Sun, 'None'   for dinner
+		AddRow(1, "2025-02-17", 1, 3). // John, Mon, 'Obento' for lunch
+		AddRow(1, "2025-02-17", 2, 1). // John, Mon, 'None'   for dinner
+		AddRow(2, "2025-02-17", 1, 1). // Paul, Mon, 'Home'   for lunch
+		AddRow(2, "2025-02-17", 2, 2)  // Paul, Mon, 'Home'   for dinner
 	queryMeals := `
         SELECT 
             m.user_id, 
             m.date, 
-            m.lunch,
-            m.dinner
+            m.meal_period,
+            m.meal_option
         FROM meals m
         WHERE m.date BETWEEN $1 AND $2
         ORDER BY m.date, m.user_id`
@@ -169,10 +173,13 @@ func TestBulkUpdateMeals(t *testing.T) {
 	db = mockDB
 
 	mock.ExpectBegin()
-	prep := mock.ExpectPrepare(regexp.QuoteMeta("INSERT INTO meals (user_id, date, lunch, dinner) VALUES ($1, $2, $3, $4) ON CONFLICT (user_id, date) DO UPDATE SET lunch = EXCLUDED.lunch, dinner = EXCLUDED.dinner"))
+//	prep := mock.ExpectPrepare(regexp.QuoteMeta("INSERT INTO meals (user_id, date, lunch, dinner) VALUES ($1, $2, $3, $4) ON CONFLICT (user_id, date) DO UPDATE SET lunch = EXCLUDED.lunch, dinner = EXCLUDED.dinner"))
+	prep := mock.ExpectPrepare(regexp.QuoteMeta("INSERT INTO meals (user_id, date, meal_period, meal_option) VALUES ($1, $2, $3, $4) ON CONFLICT (user_id, date, meal_period) DO UPDATE SET meal_option = EXCLUDED.meal_option"))
 	// Simulate two update records.
-	prep.ExpectExec().WithArgs(1, "2024-02-04", 3, 2).WillReturnResult(sqlmock.NewResult(1, 1))
-	prep.ExpectExec().WithArgs(2, "2024-02-04", 1, 3).WillReturnResult(sqlmock.NewResult(2, 1))
+	prep.ExpectExec().WithArgs(1, "2024-02-04", 1, 3).WillReturnResult(sqlmock.NewResult(1, 1))
+	prep.ExpectExec().WithArgs(1, "2024-02-04", 2, 2).WillReturnResult(sqlmock.NewResult(2, 1))
+	prep.ExpectExec().WithArgs(2, "2024-02-04", 1, 1).WillReturnResult(sqlmock.NewResult(3, 1))
+	prep.ExpectExec().WithArgs(2, "2024-02-04", 2, 3).WillReturnResult(sqlmock.NewResult(4, 1))
 	mock.ExpectCommit()
 
 	updates := []MealUpdate{
