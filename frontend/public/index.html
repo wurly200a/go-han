@@ -65,7 +65,7 @@
       background-color: #ffc0cb !important; /* Pink */
     }
     .weekday {
-      background-color: #f2f2f2 !important; /* gray */
+      background-color: #f2f2f2 !important; /* Gray */
     }
     /* Highlight cells if value differs from default */
     .cell-highlight {
@@ -116,7 +116,7 @@
     // Cookie utility functions.
     function setCookie(cname, cvalue, exdays) {
       const d = new Date();
-      d.setTime(d.getTime() + (exdays*24*60*60*1000));
+      d.setTime(d.getTime() + (exdays * 24 * 60 * 60 * 1000));
       const expires = "expires=" + d.toUTCString();
       document.cookie = cname + "=" + cvalue + ";" + expires + ";path=/";
     }
@@ -278,7 +278,7 @@
           users.forEach(user => {
             // The API returns numeric values.
             const meal = mealMapping[user.user_id] || { lunch: 0, dinner: 0, defaultLunch: 0, defaultDinner: 0 };
-            // If no data (value 0), we want to display the default value.
+            // If no data (value 0), use default.
             const displayedLunch = meal.lunch === 0 ? meal.defaultLunch : meal.lunch;
             const displayedDinner = meal.dinner === 0 ? meal.defaultDinner : meal.dinner;
             // Determine cell classes.
@@ -323,18 +323,24 @@
         $('#scheduleContainer').html(tableHtml);
       }
 
-      // Attach event handler so that when a dropdown changes, update that meal immediately.
+      // Attach event handler so that when a dropdown changes, update that meal individually.
       $(document).on('change', 'select.lunchSelect, select.dinnerSelect', function() {
         const userId = $(this).attr('data-user-id');
         const date = $(this).attr('data-date');
-        const lunchVal = $('select.lunchSelect[data-user-id="' + userId + '"][data-date="' + date + '"]').val();
-        const dinnerVal = $('select.dinnerSelect[data-user-id="' + userId + '"][data-date="' + date + '"]').val();
-        const payload = {
+        let payload = {
           user_id: parseInt(userId),
           date: date,
-          lunch: parseInt(lunchVal),
-          dinner: parseInt(dinnerVal)
+          lunch: 0,
+          dinner: 0
         };
+        if ($(this).hasClass("lunchSelect")) {
+          const lunchVal = $(this).val();
+          payload.lunch = parseInt(lunchVal);
+        }
+        if ($(this).hasClass("dinnerSelect")) {
+          const dinnerVal = $(this).val();
+          payload.dinner = parseInt(dinnerVal);
+        }
         console.log('Updating meal for user ' + userId + ' on ' + date, payload);
         $.ajax({
           url: '/api/meals/bulk-update',
