@@ -172,6 +172,15 @@ func TestBulkUpdateMeals(t *testing.T) {
 	defer mockDB.Close()
 	db = mockDB
 
+	// --- Query: users ---
+	rowsUsers := sqlmock.NewRows([]string{"id", "name"}).
+		AddRow(1, "John").
+		AddRow(2, "Paul")
+	queryUsers := "SELECT id, name FROM users"
+	t.Log(regexp.QuoteMeta(queryUsers))
+	t.Log(rowsUsers)
+	mock.ExpectQuery(regexp.QuoteMeta(queryUsers)).WillReturnRows(rowsUsers)
+
 	mock.ExpectBegin()
 //	prep := mock.ExpectPrepare(regexp.QuoteMeta("INSERT INTO meals (user_id, date, lunch, dinner) VALUES ($1, $2, $3, $4) ON CONFLICT (user_id, date) DO UPDATE SET lunch = EXCLUDED.lunch, dinner = EXCLUDED.dinner"))
 	prep := mock.ExpectPrepare(regexp.QuoteMeta("INSERT INTO meals (user_id, date, meal_period, meal_option) VALUES ($1, $2, $3, $4) ON CONFLICT (user_id, date, meal_period) DO UPDATE SET meal_option = EXCLUDED.meal_option"))
