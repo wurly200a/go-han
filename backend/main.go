@@ -339,7 +339,10 @@ func sendSlackNotification(messages []string) {
    if webhookURL == "" {
        return
    }
-   payload := map[string]string{"text": strings.Join(messages, "\n")}
+   combined := strings.Join(messages, "\n")
+   text := fmt.Sprintf("<!channel>\n%s", combined)
+   payload := map[string]string{"text": text}
+
    body, err := json.Marshal(payload)
    if err != nil {
        log.Printf("failed to marshal Slack payload: %v", err)
