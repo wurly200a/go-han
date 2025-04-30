@@ -1,17 +1,20 @@
 package main
 
 import (
-	"database/sql"
-//	"encoding/json"
-//	"log"
-	"net/http"
-	"os"
-	"sort"
-	"strconv"
-	"time"
+   "bytes"
+   "database/sql"
+   "encoding/json"
+   "fmt"
+   "log"
+   "net/http"
+   "os"
+   "sort"
+   "strconv"
+   "strings"
+   "time"
 
-	"github.com/gin-gonic/gin"
-	_ "github.com/lib/pq"
+   "github.com/gin-gonic/gin"
+   _ "github.com/lib/pq"
 )
 
 var db *sql.DB
@@ -44,11 +47,14 @@ type UserDefault struct {
 }
 
 // Mapping from meal option id to Japanese text.
-//var mealOptionText = map[int]string{
-//	1: "なし",
-//	2: "家",
-//	3: "弁当",
-//}
+var mealOptionText = map[int]string{
+   1: "なし",
+   2: "家",
+   3: "弁当",
+}
+
+// notifyLeadTime specifies threshold for last-minute changes.
+const notifyLeadTime = 24 * time.Hour
 
 func healthCheck(c *gin.Context) {
 	if err := db.Ping(); err != nil {
@@ -248,7 +254,29 @@ func bulkUpdateMeals(c *gin.Context) {
 	if err := c.ShouldBindJSON(&updates); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
-	}
+   }
+
+   // Fetch user names from DB to use in notifications
+   users := make(map[int]string)
+   userRows, err := db.Query("SELECT id, name FROM users")
+   if err != nil {
+       c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+       return
+   }
+   defer userRows.Close()
+   for userRows.Next() {
+       var id int
+       var name string
+       if err := userRows.Scan(&id, &name); err != nil {
+           c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+           return
+       }
+       users[id] = name
+   }
+
+   // prepare for last-minute change notification
+   now := time.Now()
+	var lateMsgs []string
 	tx, err := db.Begin()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -263,6 +291,21 @@ func bulkUpdateMeals(c *gin.Context) {
 	}
 	defer stmt.Close()
 	for _, m := range updates {
+       // Determine user name and detect last-minute change
+       userName := users[m.UserID]
+       // Detect last-minute change
+		if date, err := time.Parse("2006-01-02", m.Date); err == nil {
+			if diff := date.Sub(now); diff <= notifyLeadTime {
+				if m.Lunch != 0 {
+					optionName := mealOptionText[m.Lunch]
+                   lateMsgs = append(lateMsgs, fmt.Sprintf("%s の %s さんの昼食が「%s」に変更されました", m.Date, userName, optionName))
+				}
+				if m.Dinner != 0 {
+					optionName := mealOptionText[m.Dinner]
+                   lateMsgs = append(lateMsgs, fmt.Sprintf("%s の %s さんの夕食が「%s」に変更されました", m.Date, userName, optionName))
+				}
+			}
+		}
 		if m.Lunch != 0 {
 			if _, err := stmt.Exec(m.UserID, m.Date, 1, m.Lunch ); err != nil {
 				tx.Rollback()
@@ -279,11 +322,38 @@ func bulkUpdateMeals(c *gin.Context) {
 			}
 		}
 	}
-	if err := tx.Commit(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"message": "Meals updated"})
+   if err := tx.Commit(); err != nil {
+       c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+       return
+   }
+   // Send Slack notification for last-minute changes
+   if len(lateMsgs) > 0 {
+       go sendSlackNotification(lateMsgs)
+   }
+   c.JSON(http.StatusOK, gin.H{"message": "Meals updated"})
+}
+
+// sendSlackNotification sends a list of messages to Slack via incoming webhook.
+func sendSlackNotification(messages []string) {
+   webhookURL := os.Getenv("SLACK_WEBHOOK_URL")
+   if webhookURL == "" {
+       return
+   }
+   payload := map[string]string{"text": strings.Join(messages, "\n")}
+   body, err := json.Marshal(payload)
+   if err != nil {
+       log.Printf("failed to marshal Slack payload: %v", err)
+       return
+   }
+   resp, err := http.Post(webhookURL, "application/json", bytes.NewBuffer(body))
+   if err != nil {
+       log.Printf("failed to send Slack notification: %v", err)
+       return
+   }
+   defer resp.Body.Close()
+   if resp.StatusCode >= 300 {
+       log.Printf("Slack notification returned non-OK status: %s", resp.Status)
+   }
 }
 
 // getUserDefaults returns the default meal settings for a specific user.

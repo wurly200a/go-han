@@ -10,6 +10,12 @@ cp .env.example .env
 db_init.sh
 ```
 
+### Notification configuration
+
+Set the following environment variable in your .env file to enable notifications for last-minute changes (within 24 hours):
+
+SLACK_WEBHOOK_URL=your_slack_incoming_webhook_url
+
 ## Run
 
 ```
