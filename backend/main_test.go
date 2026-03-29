@@ -47,73 +47,27 @@ func TestHealthCheck(t *testing.T) {
 }
 
 // TestGetMeals verifies the /api/meals endpoint.
-// It simulates queries for:
-// 1. User information,
-// 2. User defaults, and
-// 3. Actual meal records,
-// and checks that the returned JSON includes the defaultLunch and defaultDinner fields.
+// The refactored getMeals uses a single query that pivots meal_period into
+// lunch/dinner columns and joins user defaults via generate_series.
 func TestGetMeals(t *testing.T) {
 	mockDB, mock, err := sqlmock.New()
 	assert.NoError(t, err)
 	defer mockDB.Close()
 	db = mockDB
 
-	// --- Query: users ---
-	rowsUsers := sqlmock.NewRows([]string{"id", "name"}).
-		AddRow(1, "John").
-		AddRow(2, "Paul")
-	queryUsers := "SELECT id, name FROM users"
-	t.Log(regexp.QuoteMeta(queryUsers))
-	t.Log(rowsUsers)
-	mock.ExpectQuery(regexp.QuoteMeta(queryUsers)).WillReturnRows(rowsUsers)
+	// Single combined query: users × date range, with meals pivoted and defaults joined.
+	// Rows represent the final per-user-per-date result already merged by SQL.
+	rows := sqlmock.NewRows([]string{"user_id", "user_name", "date", "lunch", "dinner", "default_lunch", "default_dinner"}).
+		// 2025-02-16 (Sunday): both users have explicit meal records overriding defaults
+		AddRow(1, "John", "2025-02-16", 1, 1, 2, 2). // John: lunch=None, dinner=None; default Sun=Home/Home
+		AddRow(2, "Paul", "2025-02-16", 1, 1, 2, 2). // Paul: lunch=None, dinner=None; default Sun=Home/Home
+		// 2025-02-17 (Monday): partial records; Paul has no lunch record (returns 0)
+		AddRow(1, "John", "2025-02-17", 3, 1, 1, 2). // John: lunch=Bento, dinner=None; default Mon=None/Home
+		AddRow(2, "Paul", "2025-02-17", 0, 2, 2, 2)  // Paul: lunch=0(not set), dinner=Home; default Mon=Home/Home
 
-	// --- Query: user_defaults ---
-	rowsDefaults := sqlmock.NewRows([]string{"user_id", "day_of_week", "lunch", "dinner"}).
-		AddRow(1, 0, 2, 2). // John, Sun, 'Home' for lunch, 'Home' for dinner
-		AddRow(1, 1, 1, 2). // John, Mon, 'None' for lunch, 'Home' for dinner
-		AddRow(1, 2, 1, 2). // John, Tue, 'None' for lunch, 'Home' for dinner
-		AddRow(1, 3, 1, 2). // John, Wed, 'None' for lunch, 'Home' for dinner
-		AddRow(1, 4, 1, 2). // John, Thu, 'None' for lunch, 'Home' for dinner
-		AddRow(1, 5, 1, 2). // John, Fri, 'None' for lunch, 'Home' for dinner
-		AddRow(1, 6, 2, 2). // John, Sat, 'Home' for lunch, 'Home' for dinner
-		AddRow(2, 0, 2, 2). // Paul, Sun, 'Home' for lunch, 'Home' for dinner
-		AddRow(2, 1, 2, 2). // Paul, Mon, 'Home' for lunch, 'Home' for dinner
-		AddRow(2, 2, 2, 2). // Paul, Tue, 'Home' for lunch, 'Home' for dinner
-		AddRow(2, 3, 2, 2). // Paul, Wed, 'Home' for lunch, 'Home' for dinner
-		AddRow(2, 4, 2, 2). // Paul, Thu, 'Home' for lunch, 'Home' for dinner
-		AddRow(2, 5, 2, 2). // Paul, Fri, 'Home' for lunch, 'Home' for dinner
-		AddRow(2, 6, 2, 2)  // Paul, Sat, 'Home' for lunch, 'Home' for dinner
-	// The current implementation of getMeals uses this query without a WHERE clause.
-	queryDefaults := "SELECT user_id, day_of_week, lunch, dinner FROM user_defaults"
-	t.Log(regexp.QuoteMeta(queryDefaults))
-	t.Log(rowsDefaults)
-	mock.ExpectQuery(regexp.QuoteMeta(queryDefaults)).WillReturnRows(rowsDefaults)
-
-	// --- Query: meals ---
-	// Actual meal records that override the defaults.
-	rowsMeals := sqlmock.NewRows([]string{"user_id", "date", "meal_period", "meal_option"}).
-		AddRow(1, "2025-02-16", 1, 1). // John, Sun, 'None'   for lunch
-		AddRow(1, "2025-02-16", 2, 1). // John, Sun, 'None'   for dinner
-		AddRow(2, "2025-02-16", 1, 1). // Paul, Sun, 'None'   for lunch
-		AddRow(2, "2025-02-16", 2, 1). // Paul, Sun, 'None'   for dinner
-		AddRow(1, "2025-02-17", 1, 3). // John, Mon, 'Obento' for lunch
-		AddRow(1, "2025-02-17", 2, 1). // John, Mon, 'None'   for dinner
-//		AddRow(2, "2025-02-17", 1, 1). // Paul, Mon, 'Home'   for lunch
-		AddRow(2, "2025-02-17", 2, 2)  // Paul, Mon, 'Home'   for dinner
-	queryMeals := `
-        SELECT 
-            m.user_id, 
-            m.date, 
-            m.meal_period,
-            m.meal_option
-        FROM meals m
-        WHERE m.date BETWEEN $1 AND $2
-        ORDER BY m.date, m.user_id`
-	t.Log(regexp.QuoteMeta(queryMeals))
-	t.Log(rowsMeals)
-	mock.ExpectQuery(regexp.QuoteMeta(queryMeals)).
-		WithArgs("2025-02-16", "2025-02-17"). // Sunday and Monday
-		WillReturnRows(rowsMeals)
+	mock.ExpectQuery(regexp.QuoteMeta(getMealsQuery)).
+		WithArgs("2025-02-16", "2025-02-17").
+		WillReturnRows(rows)
 
 	r := setupRouter()
 	w := httptest.NewRecorder()
@@ -122,43 +76,14 @@ func TestGetMeals(t *testing.T) {
 	t.Log("\n", func() string { var b bytes.Buffer; json.Indent(&b, w.Body.Bytes(), "", "  "); return b.String() }())
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	// Expected JSON (including defaultLunch and defaultDinner fields).
 	expectedBody := `{
       "2025-02-16": [
-        {
-          "user_id": 1,
-          "user_name": "John",
-          "lunch": 1,
-          "dinner": 1,
-          "defaultLunch": 2,
-          "defaultDinner": 2
-        },
-        {
-          "user_id": 2,
-          "user_name": "Paul",
-          "lunch": 1,
-          "dinner": 1,
-          "defaultLunch": 2,
-          "defaultDinner": 2
-        }
+        {"user_id": 1, "user_name": "John", "lunch": 1, "dinner": 1, "defaultLunch": 2, "defaultDinner": 2},
+        {"user_id": 2, "user_name": "Paul", "lunch": 1, "dinner": 1, "defaultLunch": 2, "defaultDinner": 2}
       ],
       "2025-02-17": [
-        {
-          "user_id": 1,
-          "user_name": "John",
-          "lunch": 3,
-          "dinner": 1,
-          "defaultLunch": 1,
-          "defaultDinner": 2
-        },
-        {
-          "user_id": 2,
-          "user_name": "Paul",
-          "lunch": 0,
-          "dinner": 2,
-          "defaultLunch": 2,
-          "defaultDinner": 2
-        }
+        {"user_id": 1, "user_name": "John", "lunch": 3, "dinner": 1, "defaultLunch": 1, "defaultDinner": 2},
+        {"user_id": 2, "user_name": "Paul", "lunch": 0, "dinner": 2, "defaultLunch": 2, "defaultDinner": 2}
       ]
     }`
 	assert.JSONEq(t, expectedBody, w.Body.String())

@@ -8,7 +8,6 @@ import (
    "log"
    "net/http"
    "os"
-   "sort"
    "strconv"
    "strings"
    "time"
@@ -64,6 +63,26 @@ func healthCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "healthy"})
 }
 
+// getMealsQuery retrieves meal schedule for a date range in a single query.
+// It pivots meal_period rows into lunch/dinner columns and joins user defaults,
+// so no Go-side merging or fallback logic is needed.
+const getMealsQuery = `
+        SELECT
+            u.id,
+            u.name,
+            TO_CHAR(d.date, 'YYYY-MM-DD'),
+            COALESCE(MAX(CASE WHEN m.meal_period = 1 THEN m.meal_option END), 0),
+            COALESCE(MAX(CASE WHEN m.meal_period = 2 THEN m.meal_option END), 0),
+            COALESCE(ud.lunch, 1),
+            COALESCE(ud.dinner, 1)
+        FROM users u
+        CROSS JOIN generate_series($1::date, $2::date, '1 day') AS d(date)
+        LEFT JOIN meals m ON m.user_id = u.id AND m.date = d.date
+        LEFT JOIN user_defaults ud ON ud.user_id = u.id
+            AND ud.day_of_week = EXTRACT(DOW FROM d.date)
+        GROUP BY u.id, u.name, d.date, ud.lunch, ud.dinner
+        ORDER BY d.date, u.id`
+
 // getMeals retrieves meal information for a range of dates.
 // For each user and each date, if there is no meal record, the user's default for that day-of-week is used.
 // The returned JSON includes defaultLunch and defaultDinner fields.
@@ -85,167 +104,25 @@ func getMeals(c *gin.Context) {
 
 	endDate := startDate.AddDate(0, 0, days-1).Format("2006-01-02")
 
-	// Retrieve user information.
-	usersQuery := "SELECT id, name FROM users"
-//	log.Printf("Executing SQL: %s", usersQuery)
-	userRows, err := db.Query(usersQuery)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	defer userRows.Close()
-
-	users := make(map[int]string)
-	for userRows.Next() {
-		var id int
-		var name string
-		if err := userRows.Scan(&id, &name); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		users[id] = name
-	}
-//	log.Printf("users: %v", users)
-
-	// Retrieve user defaults.
-	defaultsQuery := "SELECT user_id, day_of_week, lunch, dinner FROM user_defaults"
-	defRows, err := db.Query(defaultsQuery)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	defer defRows.Close()
-
-	// Map: userDefaults[user_id][day_of_week] = UserDefault
-	userDefaults := make(map[int]map[int]UserDefault)
-	for defRows.Next() {
-		var ud UserDefault
-		if err := defRows.Scan(&ud.UserID, &ud.DayOfWeek, &ud.Lunch, &ud.Dinner); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		if userDefaults[ud.UserID] == nil {
-			userDefaults[ud.UserID] = make(map[int]UserDefault)
-		}
-		userDefaults[ud.UserID][ud.DayOfWeek] = ud
-	}
-
-	// Retrieve meal records.
-	mealsQuery := `
-        SELECT 
-            m.user_id, 
-            m.date, 
-            m.meal_period,
-            m.meal_option
-        FROM meals m
-        WHERE m.date BETWEEN $1 AND $2
-        ORDER BY m.date, m.user_id`
-//	log.Printf("Executing SQL: %s with params: %s, %s", mealsQuery, startDate.Format("2006-01-02"), endDate)
-
-	rows, err := db.Query(mealsQuery, startDate.Format("2006-01-02"), endDate)
+	rows, err := db.Query(getMealsQuery, startDate.Format("2006-01-02"), endDate)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	defer rows.Close()
 
-	type mealRow struct {
-		userID int
-		date   time.Time
-		meal_period  int
-		meal_option int
-	}
-	var mealRows []mealRow
+	result := make(map[string][]Meal)
 	for rows.Next() {
-		var mr mealRow
-		var dateVal interface{}
-		if err := rows.Scan(&mr.userID, &dateVal, &mr.meal_period, &mr.meal_option); err != nil {
+		var m Meal
+		var dateStr string
+		if err := rows.Scan(&m.UserID, &m.UserName, &dateStr, &m.Lunch, &m.Dinner, &m.DefaultLunch, &m.DefaultDinner); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		switch d := dateVal.(type) {
-		case time.Time:
-			mr.date = d
-		case string:
-			mr.date, err = time.Parse("2006-01-02", d)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "unsupported date type"})
-			return
-		}
-//		log.Printf("User ID: %d, Date: %s, Lunch: %s, Dinner: %s", mr.userID, mr.date.Format("2006-01-02"), mr.lunch, mr.dinner)
-		mealRows = append(mealRows, mr)
+		result[dateStr] = append(result[dateStr], m)
 	}
 
-	// Build mapping of actual meal records.
-	type mealRow2 struct {
-		userID int
-		date   time.Time
-		lunch  int
-		dinner int
-	}
-
-	mealsData := make(map[string]map[int]mealRow2)
-
-    for _, mr := range mealRows {
-        dateStr := mr.date.Format("2006-01-02")
-        if mealsData[dateStr] == nil {
-            mealsData[dateStr] = make(map[int]mealRow2)
-        }
-        // Retrieve current value (or zero value if not set)
-        current, ok := mealsData[dateStr][mr.userID]
-        if !ok {
-            current = mealRow2{userID: mr.userID, date: mr.date}
-        }
-        if mr.meal_period == 1 {
-            current.lunch = mr.meal_option
-        } else if mr.meal_period == 2 {
-            current.dinner = mr.meal_option
-        }
-        // Write back to the map
-        mealsData[dateStr][mr.userID] = current
-    }
-
-	// Build final result.
-	finalMeals := make(map[string][]Meal)
-	for i := 0; i < days; i++ {
-		currentDate := startDate.AddDate(0, 0, i)
-		dateStr := currentDate.Format("2006-01-02")
-		weekday := int(currentDate.Weekday()) // 0: Sunday ... 6: Saturday
-		for userID, userName := range users {
-			// Get default from userDefaults.
-			defaultLunch := 1
-			defaultDinner := 1
-			if ud, ok := userDefaults[userID][weekday]; ok {
-				defaultLunch = ud.Lunch
-				defaultDinner = ud.Dinner
-			}
-			m := Meal{
-				UserID:        userID,
-				UserName:      userName,
-				Lunch:         0,
-				Dinner:        0,
-				DefaultLunch:  defaultLunch,
-				DefaultDinner: defaultDinner,
-			}
-			// Override if an actual meal record exists.
-			if rec, ok := mealsData[dateStr][userID]; ok {
-				m.Lunch = rec.lunch
-				m.Dinner = rec.dinner
-			}
-			finalMeals[dateStr] = append(finalMeals[dateStr], m)
-		}
-		sort.Slice(finalMeals[dateStr], func(i, j int) bool {
-			return finalMeals[dateStr][i].UserID < finalMeals[dateStr][j].UserID
-		})
-	}
-//	responseJSON, _ := json.Marshal(finalMeals)
-//	log.Printf("Result: %s", responseJSON)
-
-	c.JSON(http.StatusOK, finalMeals)
+	c.JSON(http.StatusOK, result)
 }
 
 // bulkUpdateMeals performs a bulk update/insertion of meal records.
