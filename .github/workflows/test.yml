@@ -32,6 +32,8 @@ jobs:
           go test ./... -v
 
       - name: Run Go Integration Tests
+        env:
+          TESTCONTAINERS_RYUK_DISABLED: "true"
         run: |
           cd backend
           go test -tags integration ./... -v
@@ -91,6 +93,10 @@ jobs:
 
 #      - name: Run Frontend Tests
 #        run: docker compose exec frontend npm test
+
+      - name: Show postgres logs on failure
+        if: failure()
+        run: docker compose logs postgres
 
       - name: Clean up
         if: always()
