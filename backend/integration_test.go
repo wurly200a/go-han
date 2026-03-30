@@ -3,8 +3,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -130,6 +132,107 @@ func TestGetMealsIntegration(t *testing.T) {
 		]
 	}`
 	assert.JSONEq(t, expected, w.Body.String())
+}
+
+// TestBulkUpdateMealsIntegration verifies that bulkUpdateMeals correctly
+// inserts new meal records and upserts existing ones against a real PostgreSQL instance.
+//
+// Step 1: insert new meals for John on 2025-02-16 (lunch=3, dinner=1)
+//   → getMeals should reflect the inserted values
+//
+// Step 2: overwrite lunch only with a different value (lunch=1)
+//   → getMeals should show the updated lunch; dinner unchanged
+func TestBulkUpdateMealsIntegration(t *testing.T) {
+	cleanup := startPostgres(t)
+	defer cleanup()
+
+	_, err := db.Exec(`
+		INSERT INTO users (id, name) VALUES (1, 'John');
+		INSERT INTO meal_periods (id) VALUES (1), (2);
+		INSERT INTO meal_options (id) VALUES (1), (2), (3);
+		INSERT INTO user_defaults (user_id, day_of_week, lunch, dinner) VALUES
+			(1, 0, 2, 2); -- Sun default: Home/Home
+	`)
+	require.NoError(t, err)
+
+	r := setupRouter()
+
+	bulkUpdate := func(updates []MealUpdate) {
+		t.Helper()
+		body, _ := json.Marshal(updates)
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("PUT", "/api/meals/bulk-update", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+		r.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Code)
+	}
+
+	getMeals := func(query string) string {
+		t.Helper()
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("GET", "/api/meals?"+query, nil)
+		r.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Code)
+		return w.Body.String()
+	}
+
+	// Step 1: insert new meals
+	bulkUpdate([]MealUpdate{{UserID: 1, Date: "2025-02-16", Lunch: 3, Dinner: 1}})
+	assert.JSONEq(t, `{
+		"2025-02-16": [
+			{"user_id":1,"user_name":"John","lunch":3,"dinner":1,"defaultLunch":2,"defaultDinner":2}
+		]
+	}`, getMeals("date=2025-02-16&days=1"))
+
+	// Step 2: upsert — overwrite lunch only; dinner should remain 1
+	bulkUpdate([]MealUpdate{{UserID: 1, Date: "2025-02-16", Lunch: 1}})
+	assert.JSONEq(t, `{
+		"2025-02-16": [
+			{"user_id":1,"user_name":"John","lunch":1,"dinner":1,"defaultLunch":2,"defaultDinner":2}
+		]
+	}`, getMeals("date=2025-02-16&days=1"))
+}
+
+// TestGetMealsWeekdayDefaultsIntegration verifies that EXTRACT(DOW FROM d.date)
+// correctly maps each day of the week (0=Sun … 6=Sat) to its user_defaults entry.
+// Each day is given a distinct (lunch, dinner) pair so a wrong DOW mapping is
+// immediately visible in the assertion.
+//
+// Date range: 2025-02-16 (Sun) … 2025-02-22 (Sat) — one full week, no meal records.
+func TestGetMealsWeekdayDefaultsIntegration(t *testing.T) {
+	cleanup := startPostgres(t)
+	defer cleanup()
+
+	_, err := db.Exec(`
+		INSERT INTO users (id, name) VALUES (1, 'Test');
+		INSERT INTO meal_periods (id) VALUES (1), (2);
+		INSERT INTO meal_options (id) VALUES (1), (2), (3);
+		INSERT INTO user_defaults (user_id, day_of_week, lunch, dinner) VALUES
+			(1, 0, 1, 1),
+			(1, 1, 2, 1),
+			(1, 2, 3, 1),
+			(1, 3, 1, 2),
+			(1, 4, 2, 2),
+			(1, 5, 3, 2),
+			(1, 6, 1, 3);
+	`)
+	require.NoError(t, err)
+
+	r := setupRouter()
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/meals?date=2025-02-16&days=7", nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.JSONEq(t, `{
+		"2025-02-16": [{"user_id":1,"user_name":"Test","lunch":0,"dinner":0,"defaultLunch":1,"defaultDinner":1}],
+		"2025-02-17": [{"user_id":1,"user_name":"Test","lunch":0,"dinner":0,"defaultLunch":2,"defaultDinner":1}],
+		"2025-02-18": [{"user_id":1,"user_name":"Test","lunch":0,"dinner":0,"defaultLunch":3,"defaultDinner":1}],
+		"2025-02-19": [{"user_id":1,"user_name":"Test","lunch":0,"dinner":0,"defaultLunch":1,"defaultDinner":2}],
+		"2025-02-20": [{"user_id":1,"user_name":"Test","lunch":0,"dinner":0,"defaultLunch":2,"defaultDinner":2}],
+		"2025-02-21": [{"user_id":1,"user_name":"Test","lunch":0,"dinner":0,"defaultLunch":3,"defaultDinner":2}],
+		"2025-02-22": [{"user_id":1,"user_name":"Test","lunch":0,"dinner":0,"defaultLunch":1,"defaultDinner":3}]
+	}`, w.Body.String())
 }
 
 // TestGetMealsNoDefaultsIntegration verifies COALESCE fallback when a user has
