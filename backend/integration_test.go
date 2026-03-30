@@ -28,7 +28,7 @@ func startPostgres(t *testing.T) func() {
 	// then restarts and logs it again after scripts complete. Wait for the
 	// second occurrence to ensure init scripts have finished.
 	pgc, err := tcpostgres.Run(ctx,
-		"docker.io/postgres:16-alpine",
+		"docker.io/postgres:17-alpine",
 		tcpostgres.WithDatabase("testdb"),
 		tcpostgres.WithUsername("testuser"),
 		tcpostgres.WithPassword("testpass"),
