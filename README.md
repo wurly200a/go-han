@@ -28,6 +28,27 @@ docker compose up --build
 docker compose down -v
 ```
 
+## Deploy
+
+Deploy target host is managed via git config to avoid storing the server address in the repository.
+
+### Initial setup (one-time)
+
+```
+git config deploy.host <SERVER_IP>
+```
+
+### Run deploy
+
+```
+make deploy
+```
+
+This will:
+1. `git fetch` + `git rebase origin/main` on the server
+2. Rebuild and restart `backend` and `frontend` containers
+3. Leave `postgres` running untouched
+
 ## Test (Backend)
 
 ```
