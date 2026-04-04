@@ -11,6 +11,8 @@
 | メソッド | パス | 概要 |
 |--------|------|------|
 | GET | `/api/health` | ヘルスチェック |
+| GET | `/api/users` | 全ユーザー一覧（ロール情報含む）取得 |
+| PUT | `/api/users/:user_id/roles` | ユーザーのロール更新 |
 | GET | `/api/meals` | 指定期間の食事予定一覧取得 |
 | PUT | `/api/meals/bulk-update` | 複数食事予定の一括更新 |
 | GET | `/api/user-defaults/:user_id` | ユーザーのデフォルト設定取得 |
@@ -21,6 +23,40 @@
 ### GET `/api/health`
 
 DBへのping結果を返す。起動確認・死活監視用。
+
+---
+
+### GET `/api/users`
+
+全ユーザーをロール情報付きで返す。
+
+**レスポンス例**
+
+```json
+[
+  { "id": 1, "name": "Mother", "is_cook": true,  "is_eater": false },
+  { "id": 2, "name": "Father", "is_cook": true,  "is_eater": true  },
+  { "id": 3, "name": "Taro",   "is_cook": false, "is_eater": true  }
+]
+```
+
+---
+
+### PUT `/api/users/:user_id/roles`
+
+指定ユーザーの `is_cook` / `is_eater` を更新する。
+
+**リクエストボディ例**
+
+```json
+{ "is_cook": true, "is_eater": false }
+```
+
+**設計上のポイント**
+
+- 両方 `true` も有効（例: Father）。
+- `is_eater=false` にすると `GET /api/meals` の結果から除外される。
+- 存在しない `user_id` の場合は `404` を返す。
 
 ---
 

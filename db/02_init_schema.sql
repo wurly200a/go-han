@@ -1,7 +1,9 @@
 -- Users table to store user information
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
-    name TEXT NOT NULL
+    name TEXT NOT NULL,
+    is_cook  BOOL NOT NULL DEFAULT false,
+    is_eater BOOL NOT NULL DEFAULT true
 );
 
 CREATE TABLE IF NOT EXISTS meal_periods (
