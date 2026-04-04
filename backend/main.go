@@ -26,6 +26,47 @@ type User struct {
 	IsEater bool   `json:"is_eater"`
 }
 
+// CookAssignment represents the cook assigned to a meal period.
+// A nil pointer in DailyCookSchedule means 各自 (no designated cook).
+type CookAssignment struct {
+	CookUserID   int    `json:"cook_user_id"`
+	CookUserName string `json:"cook_user_name"`
+}
+
+// DailyCookSchedule holds the resolved cook assignments for a single day.
+type DailyCookSchedule struct {
+	Lunch  *CookAssignment `json:"lunch"`
+	Dinner *CookAssignment `json:"dinner"`
+}
+
+// CookScheduleUpdate is one element of the PUT /api/cook-schedules request body.
+type CookScheduleUpdate struct {
+	Date       string `json:"date"`
+	MealPeriod int    `json:"meal_period"`
+	CookUserID *int   `json:"cook_user_id"` // nil = 各自
+}
+
+// CookScheduleDelete is one element of the DELETE /api/cook-schedules request body.
+type CookScheduleDelete struct {
+	Date       string `json:"date"`
+	MealPeriod int    `json:"meal_period"`
+}
+
+// CookDefaultSchedule is the response element for GET /api/cook-default-schedules.
+type CookDefaultSchedule struct {
+	DayOfWeek    int     `json:"day_of_week"`
+	MealPeriod   int     `json:"meal_period"`
+	CookUserID   *int    `json:"cook_user_id"`
+	CookUserName *string `json:"cook_user_name"`
+}
+
+// CookDefaultScheduleUpdate is one element of the PUT /api/cook-default-schedules request body.
+type CookDefaultScheduleUpdate struct {
+	DayOfWeek  int  `json:"day_of_week"`
+	MealPeriod int  `json:"meal_period"`
+	CookUserID *int `json:"cook_user_id"` // nil = 各自
+}
+
 // Meal represents meal information for a user on a specific date.
 type Meal struct {
 	UserID        int    `json:"user_id"`
@@ -349,6 +390,234 @@ func updateUserDefaults(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "User defaults updated"})
 }
 
+// getCookSchedulesQuery resolves cook assignments for a date range.
+// Priority: cook_schedules (individual date) → cook_default_schedules (weekday) → nil (各自).
+// CASE WHEN cs.date IS NOT NULL distinguishes a row with NULL cook_user_id (explicit 各自,
+// overrides the weekday default) from the absence of a row (fall through to weekday default).
+const getCookSchedulesQuery = `
+    SELECT
+        TO_CHAR(d.date, 'YYYY-MM-DD'),
+        p.id,
+        CASE
+            WHEN cs.date IS NOT NULL THEN cs.cook_user_id
+            ELSE cds.cook_user_id
+        END,
+        u.name
+    FROM generate_series($1::date, $2::date, '1 day') AS d(date)
+    CROSS JOIN (VALUES (1), (2)) AS p(id)
+    LEFT JOIN cook_schedules cs ON cs.date = d.date AND cs.meal_period = p.id
+    LEFT JOIN cook_default_schedules cds
+        ON cds.day_of_week = EXTRACT(DOW FROM d.date) AND cds.meal_period = p.id
+    LEFT JOIN users u ON u.id = CASE
+        WHEN cs.date IS NOT NULL THEN cs.cook_user_id
+        ELSE cds.cook_user_id
+    END
+    ORDER BY d.date, p.id`
+
+// getCookSchedules returns resolved cook assignments for a date range.
+func getCookSchedules(c *gin.Context) {
+	dateParam := c.Query("date")
+	daysParam := c.Query("days")
+
+	startDate, err := time.Parse("2006-01-02", dateParam)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid date format. Use YYYY-MM-DD."})
+		return
+	}
+	days, err := strconv.Atoi(daysParam)
+	if err != nil || days < 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid days parameter. Must be a positive integer."})
+		return
+	}
+	endDate := startDate.AddDate(0, 0, days-1).Format("2006-01-02")
+
+	rows, err := db.Query(getCookSchedulesQuery, startDate.Format("2006-01-02"), endDate)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	result := make(map[string]*DailyCookSchedule)
+	for rows.Next() {
+		var dateStr string
+		var mealPeriod int
+		var cookUserID sql.NullInt64
+		var cookUserName sql.NullString
+		if err := rows.Scan(&dateStr, &mealPeriod, &cookUserID, &cookUserName); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if _, ok := result[dateStr]; !ok {
+			result[dateStr] = &DailyCookSchedule{}
+		}
+		var assignment *CookAssignment
+		if cookUserID.Valid {
+			assignment = &CookAssignment{
+				CookUserID:   int(cookUserID.Int64),
+				CookUserName: cookUserName.String,
+			}
+		}
+		if mealPeriod == 1 {
+			result[dateStr].Lunch = assignment
+		} else {
+			result[dateStr].Dinner = assignment
+		}
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+const bulkUpdateCookSchedulesStmt = `INSERT INTO cook_schedules (date, meal_period, cook_user_id)
+VALUES ($1, $2, $3)
+ON CONFLICT (date, meal_period) DO UPDATE SET cook_user_id = EXCLUDED.cook_user_id`
+
+// bulkUpdateCookSchedules upserts individual date cook assignments.
+func bulkUpdateCookSchedules(c *gin.Context) {
+	var updates []CookScheduleUpdate
+	if err := c.ShouldBindJSON(&updates); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	stmt, err := tx.Prepare(bulkUpdateCookSchedulesStmt)
+	if err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer stmt.Close()
+	for _, u := range updates {
+		var cookID interface{}
+		if u.CookUserID != nil {
+			cookID = *u.CookUserID
+		}
+		if _, err := stmt.Exec(u.Date, u.MealPeriod, cookID); err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Cook schedules updated"})
+}
+
+const deleteCookSchedulesStmt = "DELETE FROM cook_schedules WHERE date = $1 AND meal_period = $2"
+
+// deleteCookSchedules removes individual date overrides, reverting to weekday defaults.
+func deleteCookSchedules(c *gin.Context) {
+	var entries []CookScheduleDelete
+	if err := c.ShouldBindJSON(&entries); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	stmt, err := tx.Prepare(deleteCookSchedulesStmt)
+	if err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer stmt.Close()
+	for _, e := range entries {
+		if _, err := stmt.Exec(e.Date, e.MealPeriod); err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Cook schedules deleted"})
+}
+
+const getCookDefaultSchedulesQuery = `SELECT cds.day_of_week, cds.meal_period, cds.cook_user_id, u.name
+FROM cook_default_schedules cds
+LEFT JOIN users u ON u.id = cds.cook_user_id
+ORDER BY cds.day_of_week, cds.meal_period`
+
+// getCookDefaultSchedules returns weekday-based default cook assignments.
+func getCookDefaultSchedules(c *gin.Context) {
+	rows, err := db.Query(getCookDefaultSchedulesQuery)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+	result := []CookDefaultSchedule{}
+	for rows.Next() {
+		var s CookDefaultSchedule
+		var cookUserID sql.NullInt64
+		var cookUserName sql.NullString
+		if err := rows.Scan(&s.DayOfWeek, &s.MealPeriod, &cookUserID, &cookUserName); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if cookUserID.Valid {
+			id := int(cookUserID.Int64)
+			s.CookUserID = &id
+		}
+		if cookUserName.Valid {
+			s.CookUserName = &cookUserName.String
+		}
+		result = append(result, s)
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+const updateCookDefaultSchedulesStmt = `INSERT INTO cook_default_schedules (day_of_week, meal_period, cook_user_id)
+VALUES ($1, $2, $3)
+ON CONFLICT (day_of_week, meal_period) DO UPDATE SET cook_user_id = EXCLUDED.cook_user_id`
+
+// updateCookDefaultSchedules upserts weekday-based default cook assignments.
+func updateCookDefaultSchedules(c *gin.Context) {
+	var entries []CookDefaultScheduleUpdate
+	if err := c.ShouldBindJSON(&entries); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	stmt, err := tx.Prepare(updateCookDefaultSchedulesStmt)
+	if err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer stmt.Close()
+	for _, e := range entries {
+		var cookID interface{}
+		if e.CookUserID != nil {
+			cookID = *e.CookUserID
+		}
+		if _, err := stmt.Exec(e.DayOfWeek, e.MealPeriod, cookID); err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Cook default schedules updated"})
+}
+
 func main() {
 	var err error
 	db, err = sql.Open("postgres", os.Getenv("DATABASE_URL"))
@@ -365,5 +634,10 @@ func main() {
 	r.PUT("/api/meals/bulk-update", bulkUpdateMeals)
 	r.GET("/api/user-defaults/:user_id", getUserDefaults)
 	r.PUT("/api/user-defaults/:user_id", updateUserDefaults)
+	r.GET("/api/cook-schedules", getCookSchedules)
+	r.PUT("/api/cook-schedules", bulkUpdateCookSchedules)
+	r.DELETE("/api/cook-schedules", deleteCookSchedules)
+	r.GET("/api/cook-default-schedules", getCookDefaultSchedules)
+	r.PUT("/api/cook-default-schedules", updateCookDefaultSchedules)
 	r.Run(":8080")
 }

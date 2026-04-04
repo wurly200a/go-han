@@ -29,11 +29,23 @@ erDiagram
         int lunch
         int dinner
     }
+    cook_default_schedules {
+        int day_of_week PK
+        int meal_period PK
+        int cook_user_id FK
+    }
+    cook_schedules {
+        date date PK
+        int meal_period PK
+        int cook_user_id FK
+    }
 
     users ||--o{ meals : ""
     users ||--o{ user_defaults : ""
     meal_periods ||--o{ meals : ""
     meal_options ||--o{ meals : ""
+    users ||--o{ cook_default_schedules : ""
+    users ||--o{ cook_schedules : ""
 ```
 
 ## テーブル定義
@@ -110,3 +122,33 @@ PK: `(user_id, day_of_week)`
 **設計上のポイント**
 
 `meals` テーブルには「実際に変更した日」だけを記録する。登録のない日は `user_defaults` で補完することで、毎週同じ予定を都度入力する手間をなくしている。
+
+---
+
+### `cook_default_schedules`
+
+曜日別・食事区分別の料理担当デフォルト設定。
+
+| カラム | 型 | 制約 |
+|-------|-----|------|
+| day_of_week | INT | PK、0=日〜6=土 |
+| meal_period | INT | PK、1=昼/2=夜 |
+| cook_user_id | INT | FK → users、NULL=各自 |
+
+登録のない曜日×区分は暗黙的に「各自」扱い。
+
+---
+
+### `cook_schedules`
+
+日付別・食事区分別の料理担当個別設定。`cook_default_schedules` より優先される。
+
+| カラム | 型 | 制約 |
+|-------|-----|------|
+| date | DATE | PK |
+| meal_period | INT | PK、1=昼/2=夜 |
+| cook_user_id | INT | FK → users、NULL=各自 |
+
+`cook_user_id=NULL` の行は「この日は各自」を明示的に指定する。デフォルトに戻すには行を DELETE する。
+
+**優先度：** `cook_schedules`（行あり） → `cook_default_schedules` → 各自（暗黙）
