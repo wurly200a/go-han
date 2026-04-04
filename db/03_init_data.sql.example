@@ -6,6 +6,7 @@ INSERT INTO meal_options (id) VALUES (1), (2), (3);
 
 -- Insert sample users
 INSERT INTO users (name) VALUES ('Saburo'), ('Jiro'), ('Taro'), ('Father');
+INSERT INTO users (name, is_cook, is_eater) VALUES ('Mother', true, false);
 
 INSERT INTO user_defaults (user_id, day_of_week, lunch, dinner) VALUES
 (1, 0, 2, 2),
