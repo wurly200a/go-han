@@ -20,6 +20,8 @@ func setupRouter() *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.Default()
 	r.GET("/health", healthCheck)
+	r.GET("/api/users", getUsers)
+	r.PUT("/api/users/:user_id/roles", updateUserRoles)
 	r.GET("/api/meals", getMeals)
 	r.PUT("/api/meals/bulk-update", bulkUpdateMeals)
 	r.GET("/api/user-defaults/:user_id", getUserDefaults)
@@ -177,6 +179,77 @@ func TestGetUserDefaults(t *testing.T) {
         {"day_of_week":6, "lunch":3, "dinner":1, "user_id":4}
     ]`
 	assert.JSONEq(t, expectedJSON, w.Body.String())
+}
+
+// TestGetUsers verifies the GET /api/users endpoint.
+func TestGetUsers(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	defer mockDB.Close()
+	db = mockDB
+
+	rows := sqlmock.NewRows([]string{"id", "name", "is_cook", "is_eater"}).
+		AddRow(1, "Mother", true, false).
+		AddRow(2, "Father", true, true).
+		AddRow(3, "Taro", false, true)
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, name, is_cook, is_eater FROM users ORDER BY id")).
+		WillReturnRows(rows)
+
+	r := setupRouter()
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/users", nil)
+	r.ServeHTTP(w, req)
+	t.Log("\n", func() string { var b bytes.Buffer; json.Indent(&b, w.Body.Bytes(), "", "  "); return b.String() }())
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	expected := `[
+		{"id":1,"name":"Mother","is_cook":true,"is_eater":false},
+		{"id":2,"name":"Father","is_cook":true,"is_eater":true},
+		{"id":3,"name":"Taro","is_cook":false,"is_eater":true}
+	]`
+	assert.JSONEq(t, expected, w.Body.String())
+}
+
+// TestUpdateUserRoles verifies the PUT /api/users/:user_id/roles endpoint.
+func TestUpdateUserRoles(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	defer mockDB.Close()
+	db = mockDB
+
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE users SET is_cook = $1, is_eater = $2 WHERE id = $3")).
+		WithArgs(true, false, "1").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	payload := `{"is_cook":true,"is_eater":false}`
+	r := setupRouter()
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("PUT", "/api/users/1/roles", bytes.NewBufferString(payload))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	t.Log("\n", func() string { var b bytes.Buffer; json.Indent(&b, w.Body.Bytes(), "", "  "); return b.String() }())
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.JSONEq(t, `{"message":"User roles updated"}`, w.Body.String())
+}
+
+// TestUpdateUserRolesNotFound verifies 404 when user_id does not exist.
+func TestUpdateUserRolesNotFound(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	defer mockDB.Close()
+	db = mockDB
+
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE users SET is_cook = $1, is_eater = $2 WHERE id = $3")).
+		WithArgs(false, true, "99").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	payload := `{"is_cook":false,"is_eater":true}`
+	r := setupRouter()
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("PUT", "/api/users/99/roles", bytes.NewBufferString(payload))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
 // TestUpdateUserDefaults verifies the PUT /api/user-defaults/:user_id endpoint.

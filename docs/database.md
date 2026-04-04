@@ -7,6 +7,8 @@ erDiagram
     users {
         int id PK
         text name
+        bool is_cook
+        bool is_eater
     }
     meals {
         int id PK
@@ -38,12 +40,18 @@ erDiagram
 
 ### `users`
 
-ユーザー情報。
+ユーザー情報とロール属性。
 
-| カラム | 型 | 制約 |
-|-------|-----|------|
-| id | SERIAL | PK |
-| name | TEXT | NOT NULL |
+| カラム | 型 | 制約 | デフォルト |
+|-------|-----|------|---------|
+| id | SERIAL | PK | — |
+| name | TEXT | NOT NULL | — |
+| is_cook | BOOL | NOT NULL | false |
+| is_eater | BOOL | NOT NULL | true |
+
+`is_cook=true` のユーザーが料理担当、`is_eater=true` のユーザーが食事予定管理の対象となる。両方 `true` も可（例: Father）。
+
+`GET /api/meals` は `is_eater=true` のユーザーのみを返す。
 
 ---
 

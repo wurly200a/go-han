@@ -18,6 +18,14 @@ import (
 
 var db *sql.DB
 
+// User represents a user with their role attributes.
+type User struct {
+	ID      int    `json:"id"`
+	Name    string `json:"name"`
+	IsCook  bool   `json:"is_cook"`
+	IsEater bool   `json:"is_eater"`
+}
+
 // Meal represents meal information for a user on a specific date.
 type Meal struct {
 	UserID        int    `json:"user_id"`
@@ -80,6 +88,7 @@ const getMealsQuery = `
         LEFT JOIN meals m ON m.user_id = u.id AND m.date = d.date
         LEFT JOIN user_defaults ud ON ud.user_id = u.id
             AND ud.day_of_week = EXTRACT(DOW FROM d.date)
+        WHERE u.is_eater = true
         GROUP BY u.id, u.name, d.date, ud.lunch, ud.dinner
         ORDER BY d.date, u.id`
 
@@ -236,6 +245,54 @@ func sendSlackNotification(messages []string) {
    }
 }
 
+// getUsers returns all users with their role attributes.
+func getUsers(c *gin.Context) {
+	rows, err := db.Query("SELECT id, name, is_cook, is_eater FROM users ORDER BY id")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+	users := []User{}
+	for rows.Next() {
+		var u User
+		if err := rows.Scan(&u.ID, &u.Name, &u.IsCook, &u.IsEater); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		users = append(users, u)
+	}
+	c.JSON(http.StatusOK, users)
+}
+
+// updateUserRoles updates the is_cook / is_eater flags for a specific user.
+func updateUserRoles(c *gin.Context) {
+	userID := c.Param("user_id")
+	var req struct {
+		IsCook  bool `json:"is_cook"`
+		IsEater bool `json:"is_eater"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	result, err := db.Exec("UPDATE users SET is_cook = $1, is_eater = $2 WHERE id = $3", req.IsCook, req.IsEater, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if n == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "User roles updated"})
+}
+
 // getUserDefaults returns the default meal settings for a specific user.
 func getUserDefaults(c *gin.Context) {
 	userID := c.Param("user_id")
@@ -302,6 +359,8 @@ func main() {
 
 	r := gin.Default()
 	r.GET("/api/health", healthCheck)
+	r.GET("/api/users", getUsers)
+	r.PUT("/api/users/:user_id/roles", updateUserRoles)
 	r.GET("/api/meals", getMeals)
 	r.PUT("/api/meals/bulk-update", bulkUpdateMeals)
 	r.GET("/api/user-defaults/:user_id", getUserDefaults)
