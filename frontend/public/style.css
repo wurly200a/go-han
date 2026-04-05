@@ -127,3 +127,10 @@ table td:not(.sunday):not(.saturday) {
 .cell-gray {
   background-color: #f2f2f2 !important;
 }
+
+/* Cell shown when no cook is assigned (各自) */
+.cell-kakuji {
+  background-color: #f9f9f9 !important;
+  color: #aaa;
+  font-size: 0.85em;
+}

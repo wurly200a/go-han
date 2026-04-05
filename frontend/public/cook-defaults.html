@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>コック設定</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      font-size: 16px;
+      margin: 0;
+      padding: 12px;
+      background: #f5f5f5;
+    }
+    h1 {
+      font-size: 1.2em;
+      margin: 0 0 16px 0;
+    }
+    .card {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+      padding: 14px 16px;
+      margin-bottom: 14px;
+    }
+    .table-container {
+      overflow-x: auto;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      min-width: 280px;
+    }
+    th, td {
+      border: 1px solid #e0e0e0;
+      padding: 7px 10px;
+      text-align: center;
+      white-space: nowrap;
+      font-size: 0.95em;
+    }
+    th {
+      background-color: #f2f2f2;
+      font-weight: normal;
+      color: #555;
+    }
+    select {
+      font-size: 1em;
+      padding: 2px 4px;
+      width: 100%;
+    }
+    .saved-msg {
+      font-size: 0.75em;
+      color: #4caf50;
+      margin-top: 8px;
+      min-height: 1em;
+    }
+    .back-link {
+      display: inline-block;
+      margin-top: 6px;
+      color: #555;
+      font-size: 0.9em;
+      text-decoration: none;
+    }
+    .back-link:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <h1>コック設定</h1>
+  <div class="card">
+    <div class="table-container">
+      <table id="defaultsTable">
+        <thead>
+          <tr>
+            <th>曜日</th>
+            <th>昼</th>
+            <th>夜</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td colspan="3">読み込み中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="saved-msg" id="savedMsg"></div>
+  </div>
+
+  <a class="back-link" href="/">← スケジュールに戻る</a>
+
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script>
+    const weekdayNames = ['日', '月', '火', '水', '木', '金', '土'];
+    let cookUsers = [];
+    let defaultsMap = {};
+
+    function buildSelect(classes, day, selectedUserId) {
+      const $select = $('<select></select>')
+        .addClass(classes)
+        .attr('data-day', day);
+      $select.append($('<option></option>').val('').text('各自'));
+      cookUsers.forEach(function(u) {
+        const $opt = $('<option></option>').val(u.id).text(u.name);
+        if (u.id === selectedUserId) $opt.prop('selected', true);
+        $select.append($opt);
+      });
+      return $select;
+    }
+
+    function renderDefaults() {
+      const $tbody = $('#defaultsTable tbody');
+      $tbody.empty();
+      for (let day = 0; day <= 6; day++) {
+        const row = defaultsMap[day] || { lunch_cook_user_id: null, dinner_cook_user_id: null };
+        const $tr = $('<tr></tr>');
+        $tr.append($('<td></td>').text(weekdayNames[day]));
+        $tr.append($('<td></td>').append(buildSelect('lunchDefault', day, row.lunch_cook_user_id)));
+        $tr.append($('<td></td>').append(buildSelect('dinnerDefault', day, row.dinner_cook_user_id)));
+        $tbody.append($tr);
+      }
+    }
+
+    function loadAll() {
+      $.when(
+        $.ajax({ url: '/api/users' }),
+        $.ajax({ url: '/api/cook-default-schedules' })
+      ).done(function(usersRes, defaultsRes) {
+        cookUsers = usersRes[0].filter(function(u) { return u.is_cook; });
+        defaultsMap = {};
+        defaultsRes[0].forEach(function(row) {
+          if (!defaultsMap[row.day_of_week]) {
+            defaultsMap[row.day_of_week] = { lunch_cook_user_id: null, dinner_cook_user_id: null };
+          }
+          if (row.meal_period === 1) {
+            defaultsMap[row.day_of_week].lunch_cook_user_id = row.cook_user_id;
+          } else if (row.meal_period === 2) {
+            defaultsMap[row.day_of_week].dinner_cook_user_id = row.cook_user_id;
+          }
+        });
+        renderDefaults();
+      }).fail(function() {
+        alert('データの読み込みに失敗しました');
+      });
+    }
+
+    $(document).on('change', 'select.lunchDefault, select.dinnerDefault', function() {
+      const day = parseInt($(this).attr('data-day'));
+      const lunchVal = $('select.lunchDefault[data-day="' + day + '"]').val();
+      const dinnerVal = $('select.dinnerDefault[data-day="' + day + '"]').val();
+
+      const payload = [
+        { day_of_week: day, meal_period: 1, cook_user_id: lunchVal === '' ? null : parseInt(lunchVal) },
+        { day_of_week: day, meal_period: 2, cook_user_id: dinnerVal === '' ? null : parseInt(dinnerVal) }
+      ];
+
+      $.ajax({
+        url: '/api/cook-default-schedules',
+        method: 'PUT',
+        contentType: 'application/json',
+        data: JSON.stringify(payload),
+        success: function() {
+          $('#savedMsg').text('保存しました').fadeIn(200).delay(1500).fadeOut(400);
+          loadAll();
+        },
+        error: function() {
+          alert('保存に失敗しました');
+        }
+      });
+    });
+
+    $(document).ready(function() {
+      loadAll();
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>日別ダッシュボード</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      font-size: 16px;
+      margin: 0;
+      padding: 12px;
+      background: #f5f5f5;
+    }
+    .nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .nav a {
+      text-decoration: none;
+      color: #333;
+      font-size: 1.1em;
+      padding: 4px 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background: #fff;
+    }
+    .nav a:hover { background: #eee; }
+    .nav-label {
+      font-size: 0.85em;
+      color: #888;
+    }
+    .card {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+      padding: 14px 16px;
+      margin-bottom: 16px;
+      overflow-x: auto;
+    }
+    .card-date {
+      font-size: 1.1em;
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
+    .day-label {
+      display: inline-block;
+      margin-left: 8px;
+      font-size: 0.75em;
+      font-weight: normal;
+      color: #fff;
+      background: #5c8fc9;
+      border-radius: 10px;
+      padding: 1px 8px;
+      vertical-align: middle;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 240px;
+    }
+    th, td {
+      border: 1px solid #e0e0e0;
+      padding: 7px 10px;
+      text-align: center;
+      font-size: 0.95em;
+      white-space: nowrap;
+    }
+    th {
+      background: #f2f2f2;
+      font-weight: normal;
+      color: #555;
+    }
+    th.period-header {
+      width: 3em;
+    }
+    td.cook-cell select {
+      font-size: 1em;
+      padding: 2px 4px;
+      width: 100%;
+    }
+    td.kakuji {
+      color: #bbb;
+      font-style: italic;
+    }
+    .summary {
+      margin-top: 8px;
+      font-size: 0.82em;
+      color: #555;
+      line-height: 1.9;
+    }
+    .saved-msg {
+      font-size: 0.75em;
+      color: #4caf50;
+      text-align: right;
+      margin-top: 4px;
+      min-height: 1em;
+    }
+    .back-link {
+      display: inline-block;
+      margin-top: 4px;
+      color: #555;
+      font-size: 0.9em;
+      text-decoration: none;
+    }
+    .back-link:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+  <div class="nav">
+    <a id="prevLink" href="#">&lt; 前日</a>
+    <span class="nav-label" id="navLabel"></span>
+    <a id="nextLink" href="#">翌日 &gt;</a>
+  </div>
+
+  <div id="dailyContainer">
+    <div class="card"><div style="color:#aaa">読み込み中...</div></div>
+  </div>
+
+  <a class="back-link" href="/">← スケジュールに戻る</a>
+
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script>
+    const weekdayNames = ['日', '月', '火', '水', '木', '金', '土'];
+    const mealOptionText  = { 1: 'なし', 2: '家',    3: '弁当'    };
+    const mealOptionIcon  = { 1: '',     2: '🏠',    3: '🍱'      };
+    const mealOptionLabel = { 1: 'なし', 2: '🏠 家', 3: '🍱 弁当' };
+
+    function getQueryParam(name) {
+      return new URLSearchParams(window.location.search).get(name);
+    }
+    function getTodayStr() {
+      const d = new Date();
+      return d.getFullYear() + '-' +
+        String(d.getMonth() + 1).padStart(2, '0') + '-' +
+        String(d.getDate()).padStart(2, '0');
+    }
+    function addDays(dateStr, n) {
+      const d = new Date(dateStr + 'T00:00:00');
+      d.setDate(d.getDate() + n);
+      return d.getFullYear() + '-' +
+        String(d.getMonth() + 1).padStart(2, '0') + '-' +
+        String(d.getDate()).padStart(2, '0');
+    }
+    function formatDateDisplay(dateStr) {
+      const d = new Date(dateStr + 'T00:00:00');
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return mm + '/' + dd + '（' + weekdayNames[d.getDay()] + '）';
+    }
+
+    // Base date from URL param, defaulting to today
+    const todayStr   = getTodayStr();
+    const baseDate   = getQueryParam('date') || todayStr;
+    const targetDates = [baseDate, addDays(baseDate, 1), addDays(baseDate, 2)];
+
+    // Relative day labels — only attach when date truly matches today/tomorrow/day-after
+    const tomorrow    = addDays(todayStr, 1);
+    const dayAfter    = addDays(todayStr, 2);
+    function getDayLabel(dateStr) {
+      if (dateStr === todayStr) return '今日';
+      if (dateStr === tomorrow)  return '明日';
+      if (dateStr === dayAfter)  return '明後日';
+      return null;
+    }
+
+    // Navigation
+    $('#prevLink').attr('href', '/daily.html?date=' + addDays(baseDate, -1));
+    $('#nextLink').attr('href', '/daily.html?date=' + addDays(baseDate,  1));
+    $('#navLabel').text(formatDateDisplay(baseDate) + ' 〜');
+
+    let cookUsers = [];
+
+    function buildCookSelect(dateStr, mealPeriod, selectedUserId) {
+      let html = '<select class="cookSelect" data-date="' + dateStr + '" data-meal-period="' + mealPeriod + '">';
+      html += '<option value="">各自</option>';
+      cookUsers.forEach(function(u) {
+        const sel = (u.id === selectedUserId) ? ' selected' : '';
+        html += '<option value="' + u.id + '"' + sel + '>' + u.name + '</option>';
+      });
+      html += '</select>';
+      return html;
+    }
+
+    function buildSummary(cookDay, mealsDay, eaterUsers) {
+      const mealMap = {};
+      mealsDay.forEach(function(m) { mealMap[m.user_id] = m; });
+
+      const periods = [
+        { label: '昼', cookEntry: cookDay ? cookDay.lunch  : null, mealKey: 'lunch',  defaultKey: 'defaultLunch'  },
+        { label: '夜', cookEntry: cookDay ? cookDay.dinner : null, mealKey: 'dinner', defaultKey: 'defaultDinner' }
+      ];
+
+      const lines = [];
+      periods.forEach(function(p) {
+        const isKakuji = !p.cookEntry;
+        if (isKakuji) {
+          lines.push(p.label + ': 各自:' + eaterUsers.length + '人');
+          return;
+        }
+        const counts = {};
+        eaterUsers.forEach(function(user) {
+          const m = mealMap[user.id] || { lunch: 0, dinner: 0, defaultLunch: 1, defaultDinner: 1 };
+          const raw = m[p.mealKey];
+          const def = m[p.defaultKey];
+          const val = (raw === 0 || raw === undefined) ? (def || 1) : raw;
+          counts[val] = (counts[val] || 0) + 1;
+        });
+        const parts = [];
+        [3, 2, 1].forEach(function(key) {
+          if (counts[key]) {
+            parts.push((mealOptionIcon[key] || '') + mealOptionText[key] + ':' + counts[key] + '人');
+          }
+        });
+        lines.push(p.label + ': ' + (parts.join('、') || '-'));
+      });
+      return lines.join('<br>');
+    }
+
+    function renderDay(dateStr, cookDay, mealsDay, eaterUsers, cardIndex) {
+      const mealMap = {};
+      mealsDay.forEach(function(m) { mealMap[m.user_id] = m; });
+
+      const periods = [
+        { label: '昼', period: 1, cookEntry: cookDay ? cookDay.lunch  : null, mealKey: 'lunch',  defaultKey: 'defaultLunch'  },
+        { label: '夜', period: 2, cookEntry: cookDay ? cookDay.dinner : null, mealKey: 'dinner', defaultKey: 'defaultDinner' }
+      ];
+
+      // Header
+      let headerHtml = '<tr><th class="period-header"></th><th>コック</th>';
+      eaterUsers.forEach(function(u) { headerHtml += '<th>' + u.name + '</th>'; });
+      headerHtml += '</tr>';
+
+      // Body
+      let bodyHtml = '';
+      periods.forEach(function(p) {
+        const isKakuji = !p.cookEntry;
+        const cookId   = p.cookEntry ? p.cookEntry.cook_user_id : null;
+        bodyHtml += '<tr>';
+        bodyHtml += '<th class="period-header">' + p.label + '</th>';
+        bodyHtml += '<td class="cook-cell">' + buildCookSelect(dateStr, p.period, cookId) + '</td>';
+        eaterUsers.forEach(function(user) {
+          if (isKakuji) {
+            bodyHtml += '<td class="kakuji">各自</td>';
+          } else {
+            const m = mealMap[user.id] || { lunch: 0, dinner: 0, defaultLunch: 1, defaultDinner: 1 };
+            const raw = m[p.mealKey];
+            const def = m[p.defaultKey];
+            const val = (raw === 0 || raw === undefined) ? (def || 1) : raw;
+            bodyHtml += '<td>' + (mealOptionLabel[val] || '-') + '</td>';
+          }
+        });
+        bodyHtml += '</tr>';
+      });
+
+      const label    = getDayLabel(dateStr);
+      const labelHtml = label ? '<span class="day-label">' + label + '</span>' : '';
+      const savedId  = 'savedMsg-' + cardIndex;
+      const summary  = buildSummary(cookDay, mealsDay, eaterUsers);
+
+      return '<div class="card">' +
+        '<div class="card-date">' + formatDateDisplay(dateStr) + labelHtml + '</div>' +
+        '<table><thead>' + headerHtml + '</thead><tbody>' + bodyHtml + '</tbody></table>' +
+        '<div class="summary">' + summary + '</div>' +
+        '<div class="saved-msg" id="' + savedId + '"></div>' +
+        '</div>';
+    }
+
+    function loadAll() {
+      $.when(
+        $.ajax({ url: '/api/users' }),
+        $.ajax({ url: '/api/cook-schedules', data: { date: baseDate, days: 3 } }),
+        $.ajax({ url: '/api/meals',          data: { date: baseDate, days: 3 } })
+      ).done(function(usersRes, cookRes, mealsRes) {
+        const users     = usersRes[0];
+        const cookData  = cookRes[0]  || {};
+        const mealsData = mealsRes[0] || {};
+
+        cookUsers = users.filter(function(u) { return u.is_cook; });
+        const eaterUsers = users.filter(function(u) { return u.is_eater; });
+
+        let html = '';
+        targetDates.forEach(function(dateStr, i) {
+          const cookDay  = cookData[dateStr]  || null;
+          const mealsDay = mealsData[dateStr] || [];
+          html += renderDay(dateStr, cookDay, mealsDay, eaterUsers, i);
+        });
+        $('#dailyContainer').html(html);
+      }).fail(function() {
+        alert('データの読み込みに失敗しました');
+      });
+    }
+
+    $(document).on('change', '.cookSelect', function() {
+      const dateStr    = $(this).attr('data-date');
+      const mealPeriod = parseInt($(this).attr('data-meal-period'));
+      const val        = $(this).val();
+      const cookUserId = val === '' ? null : parseInt(val);
+      const cardIndex  = targetDates.indexOf(dateStr);
+
+      $.ajax({
+        url: '/api/cook-schedules',
+        method: 'PUT',
+        contentType: 'application/json',
+        data: JSON.stringify([{ date: dateStr, meal_period: mealPeriod, cook_user_id: cookUserId }]),
+        success: function() {
+          if (cardIndex >= 0) {
+            $('#savedMsg-' + cardIndex).text('保存しました').fadeIn(200).delay(1500).fadeOut(400);
+          }
+          loadAll();
+        },
+        error: function() { alert('保存に失敗しました'); }
+      });
+    });
+
+    $(document).ready(function() { loadAll(); });
+  </script>
+</body>
+</html>
