@@ -26,6 +26,11 @@ func setupRouter() *gin.Engine {
 	r.PUT("/api/meals/bulk-update", bulkUpdateMeals)
 	r.GET("/api/user-defaults/:user_id", getUserDefaults)
 	r.PUT("/api/user-defaults/:user_id", updateUserDefaults)
+	r.GET("/api/cook-schedules", getCookSchedules)
+	r.PUT("/api/cook-schedules", bulkUpdateCookSchedules)
+	r.DELETE("/api/cook-schedules", deleteCookSchedules)
+	r.GET("/api/cook-default-schedules", getCookDefaultSchedules)
+	r.PUT("/api/cook-default-schedules", updateCookDefaultSchedules)
 	return r
 }
 
@@ -286,4 +291,148 @@ func TestUpdateUserDefaults(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	expectedResp := `{"message":"User defaults updated"}`
 	assert.JSONEq(t, expectedResp, w.Body.String())
+}
+
+// TestGetCookSchedules verifies GET /api/cook-schedules.
+// Rows with a valid cook_user_id produce a CookAssignment object;
+// rows with NULL produce nil (各自) in the JSON response.
+func TestGetCookSchedules(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	defer mockDB.Close()
+	db = mockDB
+
+	rows := sqlmock.NewRows([]string{"date", "meal_period", "cook_user_id", "cook_user_name"}).
+		AddRow("2026-04-06", 1, 5, "Mother").
+		AddRow("2026-04-06", 2, nil, nil).
+		AddRow("2026-04-07", 1, nil, nil).
+		AddRow("2026-04-07", 2, 2, "Father")
+
+	mock.ExpectQuery(regexp.QuoteMeta(getCookSchedulesQuery)).
+		WithArgs("2026-04-06", "2026-04-07").
+		WillReturnRows(rows)
+
+	r := setupRouter()
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/cook-schedules?date=2026-04-06&days=2", nil)
+	r.ServeHTTP(w, req)
+	t.Log("\n", func() string { var b bytes.Buffer; json.Indent(&b, w.Body.Bytes(), "", "  "); return b.String() }())
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	expected := `{
+		"2026-04-06": {"lunch": {"cook_user_id": 5, "cook_user_name": "Mother"}, "dinner": null},
+		"2026-04-07": {"lunch": null, "dinner": {"cook_user_id": 2, "cook_user_name": "Father"}}
+	}`
+	assert.JSONEq(t, expected, w.Body.String())
+}
+
+// TestBulkUpdateCookSchedules verifies PUT /api/cook-schedules.
+func TestBulkUpdateCookSchedules(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	defer mockDB.Close()
+	db = mockDB
+
+	mock.ExpectBegin()
+	prep := mock.ExpectPrepare(regexp.QuoteMeta(bulkUpdateCookSchedulesStmt))
+	prep.ExpectExec().WithArgs("2026-04-06", 1, sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(1, 1))
+	prep.ExpectExec().WithArgs("2026-04-06", 2, sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	cookID := 5
+	updates := []CookScheduleUpdate{
+		{Date: "2026-04-06", MealPeriod: 1, CookUserID: &cookID},
+		{Date: "2026-04-06", MealPeriod: 2, CookUserID: nil},
+	}
+	payload, _ := json.Marshal(updates)
+	r := setupRouter()
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("PUT", "/api/cook-schedules", bytes.NewBuffer(payload))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	t.Log("\n", func() string { var b bytes.Buffer; json.Indent(&b, w.Body.Bytes(), "", "  "); return b.String() }())
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.JSONEq(t, `{"message":"Cook schedules updated"}`, w.Body.String())
+}
+
+// TestDeleteCookSchedules verifies DELETE /api/cook-schedules.
+func TestDeleteCookSchedules(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	defer mockDB.Close()
+	db = mockDB
+
+	mock.ExpectBegin()
+	prep := mock.ExpectPrepare(regexp.QuoteMeta(deleteCookSchedulesStmt))
+	prep.ExpectExec().WithArgs("2026-04-06", 1).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	entries := []CookScheduleDelete{{Date: "2026-04-06", MealPeriod: 1}}
+	payload, _ := json.Marshal(entries)
+	r := setupRouter()
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("DELETE", "/api/cook-schedules", bytes.NewBuffer(payload))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	t.Log("\n", func() string { var b bytes.Buffer; json.Indent(&b, w.Body.Bytes(), "", "  "); return b.String() }())
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.JSONEq(t, `{"message":"Cook schedules deleted"}`, w.Body.String())
+}
+
+// TestGetCookDefaultSchedules verifies GET /api/cook-default-schedules.
+func TestGetCookDefaultSchedules(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	defer mockDB.Close()
+	db = mockDB
+
+	rows := sqlmock.NewRows([]string{"day_of_week", "meal_period", "cook_user_id", "cook_user_name"}).
+		AddRow(1, 1, 5, "Mother").
+		AddRow(1, 2, 5, "Mother").
+		AddRow(3, 1, nil, nil)
+
+	mock.ExpectQuery(regexp.QuoteMeta(getCookDefaultSchedulesQuery)).WillReturnRows(rows)
+
+	r := setupRouter()
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/cook-default-schedules", nil)
+	r.ServeHTTP(w, req)
+	t.Log("\n", func() string { var b bytes.Buffer; json.Indent(&b, w.Body.Bytes(), "", "  "); return b.String() }())
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	expected := `[
+		{"day_of_week":1,"meal_period":1,"cook_user_id":5,"cook_user_name":"Mother"},
+		{"day_of_week":1,"meal_period":2,"cook_user_id":5,"cook_user_name":"Mother"},
+		{"day_of_week":3,"meal_period":1,"cook_user_id":null,"cook_user_name":null}
+	]`
+	assert.JSONEq(t, expected, w.Body.String())
+}
+
+// TestUpdateCookDefaultSchedules verifies PUT /api/cook-default-schedules.
+func TestUpdateCookDefaultSchedules(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	defer mockDB.Close()
+	db = mockDB
+
+	mock.ExpectBegin()
+	prep := mock.ExpectPrepare(regexp.QuoteMeta(updateCookDefaultSchedulesStmt))
+	prep.ExpectExec().WithArgs(1, 1, sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(1, 1))
+	prep.ExpectExec().WithArgs(1, 2, sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	cookID := 5
+	entries := []CookDefaultScheduleUpdate{
+		{DayOfWeek: 1, MealPeriod: 1, CookUserID: &cookID},
+		{DayOfWeek: 1, MealPeriod: 2, CookUserID: nil},
+	}
+	payload, _ := json.Marshal(entries)
+	r := setupRouter()
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("PUT", "/api/cook-default-schedules", bytes.NewBuffer(payload))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	t.Log("\n", func() string { var b bytes.Buffer; json.Indent(&b, w.Body.Bytes(), "", "  "); return b.String() }())
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.JSONEq(t, `{"message":"Cook default schedules updated"}`, w.Body.String())
 }

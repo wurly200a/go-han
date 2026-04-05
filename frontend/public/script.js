@@ -1,5 +1,7 @@
 // Global variable to store schedule data.
 let scheduleData = null;
+// Global variable to store cook schedule data.
+let cookScheduleData = null;
 // Global language setting; default is Japanese.
 let currentLang = "ja";
 
@@ -67,7 +69,7 @@ $('#languageSelect').change(function() {
   setCookie("lang", currentLang, 365);
   updateLanguage();
   if (scheduleData !== null) {
-    renderSchedule(scheduleData);
+    renderSchedule(scheduleData, cookScheduleData);
   }
 });
 
@@ -103,27 +105,25 @@ $(document).ready(function() {
     3: "弁当"
   };
 
-  // Load schedule from backend.
+  // Load schedule from backend (meals and cook schedules in parallel).
   function loadSchedule() {
     const startDate = $('#startDate').val();
     const days = $('#days').val();
-    $.ajax({
-      url: '/api/meals',
-      method: 'GET',
-      data: { date: startDate, days: days },
-      success: function(data) {
-        scheduleData = data;
-        renderSchedule(data);
-      },
-      error: function(err) {
-        alert('Failed to load schedule.');
-        console.error(err);
-      }
+    $.when(
+      $.ajax({ url: '/api/meals', method: 'GET', data: { date: startDate, days: days } }),
+      $.ajax({ url: '/api/cook-schedules', method: 'GET', data: { date: startDate, days: days } })
+    ).done(function(mealsResult, cookResult) {
+      scheduleData = mealsResult[0];
+      cookScheduleData = cookResult[0];
+      renderSchedule(scheduleData, cookScheduleData);
+    }).fail(function(err) {
+      alert('Failed to load schedule.');
+      console.error(err);
     });
   }
 
   // Render schedule table.
-  function renderSchedule(data) {
+  function renderSchedule(data, cookData) {
     $('#scheduleContainer').empty();
     const dates = Object.keys(data).sort();
     if (dates.length === 0) {
@@ -136,14 +136,14 @@ $(document).ready(function() {
     const users = firstDateMeals.slice().sort((a, b) => a.user_id - b.user_id);
 
     let tableHtml = '<table>';
-    // Header row 1: Date | each user (as link with colspan=2)
-    tableHtml += '<thead><tr><th>' + translations[currentLang].dateHeader + '</th>';
+    // Header row 1: Cook defaults link | each user (as link with colspan=2)
+    tableHtml += '<thead><tr><th><a href="/cook-defaults.html">コック</a></th>';
     users.forEach(user => {
       tableHtml += '<th colspan="2"><a href="/user-defaults.html?user_id=' + user.user_id + '">' + user.user_name + '</a></th>';
     });
     tableHtml += '</tr>';
-    // Header row 2: empty cell, then Lunch and Dinner for each user.
-    tableHtml += '<tr><th></th>';
+    // Header row 2: Date | Lunch/Dinner for each user.
+    tableHtml += '<tr><th>' + translations[currentLang].dateHeader + '</th>';
     users.forEach(() => {
       tableHtml += '<th>' + translations[currentLang].lunchHeader + '</th><th>' + translations[currentLang].dinnerHeader + '</th>';
     });
@@ -164,7 +164,12 @@ $(document).ready(function() {
       if (weekday === 0) dateClass = "sunday";
       else if (weekday === 6) dateClass = "saturday";
       else dateClass = "weekday";
-      tableHtml += '<td class="' + dateClass + '">' + dateDisplay + '</td>';
+      tableHtml += '<td class="' + dateClass + '"><a href="/daily.html?date=' + date + '">' + dateDisplay + '</a></td>';
+
+      // Cook info for this date.
+      const cookDay = (cookData && cookData[date]) ? cookData[date] : { lunch: null, dinner: null };
+      const lunchCook = cookDay.lunch;
+      const dinnerCook = cookDay.dinner;
 
       // Create a mapping for this date.
       const mealMapping = {};
@@ -173,46 +178,35 @@ $(document).ready(function() {
       });
 
       users.forEach(user => {
-        // The API returns numeric values.
         const meal = mealMapping[user.user_id] || { lunch: 0, dinner: 0, defaultLunch: 0, defaultDinner: 0 };
-        // If no data (value 0), use default.
         const displayedLunch = meal.lunch === 0 ? meal.defaultLunch : meal.lunch;
         const displayedDinner = meal.dinner === 0 ? meal.defaultDinner : meal.dinner;
-        // Determine cell classes.
-        let lunchCellClass = "";
-        let dinnerCellClass = "";
-        if (meal.lunch === 0) {
-          lunchCellClass = "cell-gray";
-        } else if (meal.lunch !== meal.defaultLunch) {
-          lunchCellClass = "cell-highlight";
-        }
-        if (meal.dinner === 0) {
-          dinnerCellClass = "cell-gray";
-        } else if (meal.dinner !== meal.defaultDinner) {
-          dinnerCellClass = "cell-highlight";
-        }
-        // Build lunch dropdown.
-        let lunchSelect = '<select class="lunchSelect" data-user-id="' + user.user_id + '" data-date="' + date + '">';
-        for (let key in mealOptions) {
-          lunchSelect += '<option value="' + key + '"';
-          if (displayedLunch === parseInt(key)) {
-            lunchSelect += ' selected';
+
+        // Lunch cell: show 各自 text when no cook assigned.
+        if (!lunchCook) {
+          tableHtml += '<td class="cell-kakuji">各自</td>';
+        } else {
+          let lunchCellClass = meal.lunch === 0 ? "cell-gray" : (meal.lunch !== meal.defaultLunch ? "cell-highlight" : "");
+          let lunchSelect = '<select class="lunchSelect" data-user-id="' + user.user_id + '" data-date="' + date + '">';
+          for (let key in mealOptions) {
+            lunchSelect += '<option value="' + key + '"' + (displayedLunch === parseInt(key) ? ' selected' : '') + '>' + mealOptions[key] + '</option>';
           }
-          lunchSelect += '>' + mealOptions[key] + '</option>';
+          lunchSelect += '</select>';
+          tableHtml += '<td class="' + lunchCellClass + '">' + lunchSelect + '</td>';
         }
-        lunchSelect += '</select>';
-        // Build dinner dropdown.
-        let dinnerSelect = '<select class="dinnerSelect" data-user-id="' + user.user_id + '" data-date="' + date + '">';
-        for (let key in mealOptions) {
-          dinnerSelect += '<option value="' + key + '"';
-          if (displayedDinner === parseInt(key)) {
-            dinnerSelect += ' selected';
+
+        // Dinner cell: show 各自 text when no cook assigned.
+        if (!dinnerCook) {
+          tableHtml += '<td class="cell-kakuji">各自</td>';
+        } else {
+          let dinnerCellClass = meal.dinner === 0 ? "cell-gray" : (meal.dinner !== meal.defaultDinner ? "cell-highlight" : "");
+          let dinnerSelect = '<select class="dinnerSelect" data-user-id="' + user.user_id + '" data-date="' + date + '">';
+          for (let key in mealOptions) {
+            dinnerSelect += '<option value="' + key + '"' + (displayedDinner === parseInt(key) ? ' selected' : '') + '>' + mealOptions[key] + '</option>';
           }
-          dinnerSelect += '>' + mealOptions[key] + '</option>';
+          dinnerSelect += '</select>';
+          tableHtml += '<td class="' + dinnerCellClass + '">' + dinnerSelect + '</td>';
         }
-        dinnerSelect += '</select>';
-        tableHtml += '<td class="' + lunchCellClass + '">' + lunchSelect + '</td>';
-        tableHtml += '<td class="' + dinnerCellClass + '">' + dinnerSelect + '</td>';
       });
       tableHtml += '</tr>';
     });

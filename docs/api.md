@@ -17,6 +17,11 @@
 | PUT | `/api/meals/bulk-update` | 複数食事予定の一括更新 |
 | GET | `/api/user-defaults/:user_id` | ユーザーのデフォルト設定取得 |
 | PUT | `/api/user-defaults/:user_id` | ユーザーのデフォルト設定更新 |
+| GET | `/api/cook-schedules` | 指定期間の料理担当（解決済み）取得 |
+| PUT | `/api/cook-schedules` | 日付別料理担当の個別設定 |
+| DELETE | `/api/cook-schedules` | 日付別個別設定の削除（デフォルトに戻す） |
+| GET | `/api/cook-default-schedules` | 曜日別デフォルト料理担当取得 |
+| PUT | `/api/cook-default-schedules` | 曜日別デフォルト料理担当更新 |
 
 ## 各エンドポイント詳細
 
@@ -145,3 +150,79 @@ DBへのping結果を返す。起動確認・死活監視用。
 ### PUT `/api/user-defaults/:user_id`
 
 ユーザーの曜日別デフォルト設定を更新する。リクエスト形式はGETのレスポンスと同じ。
+
+---
+
+### GET `/api/cook-schedules`
+
+指定期間内の料理担当を解決済みで返す。優先度：個別設定 → 曜日デフォルト → 各自（null）。
+
+**クエリパラメータ**
+
+| パラメータ | 必須 | 説明 |
+|---------|------|------|
+| `date` | 必須 | 開始日 (`YYYY-MM-DD`) |
+| `days` | 必須 | 取得日数（整数） |
+
+**レスポンス例**
+
+```json
+{
+  "2026-04-06": {
+    "lunch":  { "cook_user_id": 5, "cook_user_name": "Mother" },
+    "dinner": null
+  },
+  "2026-04-07": {
+    "lunch":  null,
+    "dinner": { "cook_user_id": 2, "cook_user_name": "Father" }
+  }
+}
+```
+
+`null` = 各自。フロントエンドはこの値を見て eater の dropdown / 「各自」テキスト表示を切り替える。
+
+---
+
+### PUT `/api/cook-schedules`
+
+日付別の料理担当を個別設定する（upsert）。`cook_user_id=null` で「各自」を曜日デフォルトより優先して上書き。
+
+```json
+[
+  { "date": "2026-04-06", "meal_period": 1, "cook_user_id": 5 },
+  { "date": "2026-04-06", "meal_period": 2, "cook_user_id": null }
+]
+```
+
+---
+
+### DELETE `/api/cook-schedules`
+
+個別設定を削除してデフォルトに戻す。
+
+```json
+[
+  { "date": "2026-04-06", "meal_period": 1 }
+]
+```
+
+---
+
+### GET `/api/cook-default-schedules`
+
+曜日別デフォルト設定を返す。登録のない曜日×区分は暗黙的に各自。
+
+```json
+[
+  { "day_of_week": 1, "meal_period": 1, "cook_user_id": 5, "cook_user_name": "Mother" },
+  { "day_of_week": 1, "meal_period": 2, "cook_user_id": null, "cook_user_name": null }
+]
+```
+
+`day_of_week` は 0=日曜〜6=土曜。`meal_period` は 1=昼 / 2=夜。
+
+---
+
+### PUT `/api/cook-default-schedules`
+
+曜日別デフォルト設定を更新する（upsert）。リクエスト形式は `cook_user_name` を除いた GET レスポンスと同じ。

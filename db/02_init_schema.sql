@@ -33,3 +33,21 @@ CREATE TABLE IF NOT EXISTS user_defaults (
     dinner INT,
     PRIMARY KEY (user_id, day_of_week)
 );
+
+-- Cook schedule: weekday-based default cook assignment per meal period.
+-- cook_user_id NULL means 各自 (no designated cook).
+CREATE TABLE IF NOT EXISTS cook_default_schedules (
+    day_of_week  INT NOT NULL,
+    meal_period  INT NOT NULL,
+    cook_user_id INT REFERENCES users(id) ON DELETE SET NULL,
+    PRIMARY KEY (day_of_week, meal_period)
+);
+
+-- Cook schedule: individual date override per meal period.
+-- cook_user_id NULL means explicitly 各自 (overrides any weekday default).
+CREATE TABLE IF NOT EXISTS cook_schedules (
+    date         DATE NOT NULL,
+    meal_period  INT  NOT NULL,
+    cook_user_id INT REFERENCES users(id) ON DELETE SET NULL,
+    PRIMARY KEY (date, meal_period)
+);

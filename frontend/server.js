@@ -73,6 +73,83 @@ app.put('/api/user-defaults/:user_id', async (req, res) => {
   }
 });
 
+// Proxy endpoint for GET /api/users
+app.get('/api/users', async (req, res) => {
+  try {
+    const response = await axios.get(`${BACKEND_API_BASE}/users`);
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error fetching users:', error.message);
+    res.status(500).json({ error: 'Failed to fetch users from backend' });
+  }
+});
+
+// Proxy endpoint for PUT /api/users/:user_id/roles
+app.put('/api/users/:user_id/roles', async (req, res) => {
+  try {
+    const response = await axios.put(`${BACKEND_API_BASE}/users/${req.params.user_id}/roles`, req.body);
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error updating user roles:', error.message);
+    res.status(500).json({ error: 'Failed to update user roles in backend' });
+  }
+});
+
+// Proxy endpoint for GET /api/cook-schedules
+app.get('/api/cook-schedules', async (req, res) => {
+  try {
+    const response = await axios.get(`${BACKEND_API_BASE}/cook-schedules`, { params: req.query });
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error fetching cook schedules:', error.message);
+    res.status(500).json({ error: 'Failed to fetch cook schedules from backend' });
+  }
+});
+
+// Proxy endpoint for PUT /api/cook-schedules
+app.put('/api/cook-schedules', async (req, res) => {
+  try {
+    const response = await axios.put(`${BACKEND_API_BASE}/cook-schedules`, req.body);
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error updating cook schedules:', error.message);
+    res.status(500).json({ error: 'Failed to update cook schedules in backend' });
+  }
+});
+
+// Proxy endpoint for DELETE /api/cook-schedules
+app.delete('/api/cook-schedules', async (req, res) => {
+  try {
+    const response = await axios.delete(`${BACKEND_API_BASE}/cook-schedules`, { params: req.query });
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error deleting cook schedules:', error.message);
+    res.status(500).json({ error: 'Failed to delete cook schedules from backend' });
+  }
+});
+
+// Proxy endpoint for GET /api/cook-default-schedules
+app.get('/api/cook-default-schedules', async (req, res) => {
+  try {
+    const response = await axios.get(`${BACKEND_API_BASE}/cook-default-schedules`);
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error fetching cook default schedules:', error.message);
+    res.status(500).json({ error: 'Failed to fetch cook default schedules from backend' });
+  }
+});
+
+// Proxy endpoint for PUT /api/cook-default-schedules
+app.put('/api/cook-default-schedules', async (req, res) => {
+  try {
+    const response = await axios.put(`${BACKEND_API_BASE}/cook-default-schedules`, req.body);
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error updating cook default schedules:', error.message);
+    res.status(500).json({ error: 'Failed to update cook default schedules in backend' });
+  }
+});
+
 // Serve index.html on the root path
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));

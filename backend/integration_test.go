@@ -344,3 +344,216 @@ func TestGetMealsNoDefaultsIntegration(t *testing.T) {
 	}`
 	assert.JSONEq(t, expected, w.Body.String())
 }
+
+// seedCookUsers inserts one cook-only user (id=1) and one eater-only user (id=2)
+// for cook schedule integration tests.
+func seedCookUsers(t *testing.T) {
+	t.Helper()
+	_, err := db.Exec(`
+		INSERT INTO users (id, name, is_cook, is_eater) VALUES
+			(1, 'Cook', true, false),
+			(2, 'Eater', false, true);
+		INSERT INTO meal_periods (id) VALUES (1), (2);
+		INSERT INTO meal_options (id) VALUES (1), (2), (3);
+	`)
+	require.NoError(t, err)
+}
+
+// TestGetCookSchedulesPriorityIntegration covers all three resolution cases in a
+// single date range:
+//
+//	2025-02-16 (Sun, DOW=0): no default → lunch=null, dinner=null
+//	2025-02-17 (Mon, DOW=1): default=Cook for both; individual overrides lunch→Cook,
+//	                          dinner→NULL(explicit 各自)
+//	2025-02-18 (Tue, DOW=2): default=Cook for lunch only; no individual override
+//	                          → lunch falls back to default, dinner=null
+func TestGetCookSchedulesPriorityIntegration(t *testing.T) {
+	cleanup := startPostgres(t)
+	defer cleanup()
+	seedCookUsers(t)
+
+	_, err := db.Exec(`
+		INSERT INTO cook_default_schedules (day_of_week, meal_period, cook_user_id) VALUES
+			(1, 1, 1),
+			(1, 2, 1),
+			(2, 1, 1);
+		INSERT INTO cook_schedules (date, meal_period, cook_user_id) VALUES
+			('2025-02-17', 1, 1),
+			('2025-02-17', 2, NULL);
+	`)
+	require.NoError(t, err)
+
+	r := setupRouter()
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/cook-schedules?date=2025-02-16&days=3", nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.JSONEq(t, `{
+		"2025-02-16": {"lunch": null, "dinner": null},
+		"2025-02-17": {"lunch": {"cook_user_id":1,"cook_user_name":"Cook"}, "dinner": null},
+		"2025-02-18": {"lunch": {"cook_user_id":1,"cook_user_name":"Cook"}, "dinner": null}
+	}`, w.Body.String())
+}
+
+// TestGetCookSchedulesExplicitNullOverridesDefaultIntegration verifies that a row
+// with cook_user_id=NULL in cook_schedules suppresses the weekday default (各自 wins).
+func TestGetCookSchedulesExplicitNullOverridesDefaultIntegration(t *testing.T) {
+	cleanup := startPostgres(t)
+	defer cleanup()
+	seedCookUsers(t)
+
+	_, err := db.Exec(`
+		INSERT INTO cook_default_schedules (day_of_week, meal_period, cook_user_id) VALUES
+			(1, 1, 1);
+		INSERT INTO cook_schedules (date, meal_period, cook_user_id) VALUES
+			('2025-02-17', 1, NULL);
+	`)
+	require.NoError(t, err)
+
+	r := setupRouter()
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/cook-schedules?date=2025-02-17&days=1", nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	// lunch must be null (explicit 各自), not the default Cook user
+	assert.JSONEq(t, `{
+		"2025-02-17": {"lunch": null, "dinner": null}
+	}`, w.Body.String())
+}
+
+// TestBulkUpdateCookSchedulesIntegration verifies upsert behaviour:
+// insert a new assignment, then overwrite it with a different value.
+func TestBulkUpdateCookSchedulesIntegration(t *testing.T) {
+	cleanup := startPostgres(t)
+	defer cleanup()
+	seedCookUsers(t)
+
+	r := setupRouter()
+
+	put := func(body string) {
+		t.Helper()
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("PUT", "/api/cook-schedules", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		r.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Code)
+	}
+
+	get := func() string {
+		t.Helper()
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("GET", "/api/cook-schedules?date=2025-02-17&days=1", nil)
+		r.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Code)
+		return w.Body.String()
+	}
+
+	// Step 1: assign Cook to Mon lunch
+	put(`[{"date":"2025-02-17","meal_period":1,"cook_user_id":1}]`)
+	assert.JSONEq(t, `{"2025-02-17":{"lunch":{"cook_user_id":1,"cook_user_name":"Cook"},"dinner":null}}`, get())
+
+	// Step 2: overwrite Mon lunch with null (各自)
+	put(`[{"date":"2025-02-17","meal_period":1,"cook_user_id":null}]`)
+	assert.JSONEq(t, `{"2025-02-17":{"lunch":null,"dinner":null}}`, get())
+}
+
+// TestDeleteCookSchedulesIntegration verifies that DELETE removes the individual
+// override and the date falls back to the weekday default.
+func TestDeleteCookSchedulesIntegration(t *testing.T) {
+	cleanup := startPostgres(t)
+	defer cleanup()
+	seedCookUsers(t)
+
+	_, err := db.Exec(`
+		INSERT INTO cook_default_schedules (day_of_week, meal_period, cook_user_id) VALUES (1, 1, 1);
+		INSERT INTO cook_schedules (date, meal_period, cook_user_id) VALUES ('2025-02-17', 1, NULL);
+	`)
+	require.NoError(t, err)
+
+	r := setupRouter()
+
+	get := func() string {
+		t.Helper()
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("GET", "/api/cook-schedules?date=2025-02-17&days=1", nil)
+		r.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Code)
+		return w.Body.String()
+	}
+
+	// Before delete: explicit NULL override → lunch=null
+	assert.JSONEq(t, `{"2025-02-17":{"lunch":null,"dinner":null}}`, get())
+
+	// Delete the override
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("DELETE", "/api/cook-schedules",
+		bytes.NewBufferString(`[{"date":"2025-02-17","meal_period":1}]`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	// After delete: falls back to weekday default → lunch=Cook
+	assert.JSONEq(t, `{"2025-02-17":{"lunch":{"cook_user_id":1,"cook_user_name":"Cook"},"dinner":null}}`, get())
+}
+
+// TestGetCookDefaultSchedulesIntegration verifies GET /api/cook-default-schedules.
+func TestGetCookDefaultSchedulesIntegration(t *testing.T) {
+	cleanup := startPostgres(t)
+	defer cleanup()
+	seedCookUsers(t)
+
+	_, err := db.Exec(`
+		INSERT INTO cook_default_schedules (day_of_week, meal_period, cook_user_id) VALUES
+			(1, 1, 1),
+			(1, 2, NULL);
+	`)
+	require.NoError(t, err)
+
+	r := setupRouter()
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/cook-default-schedules", nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.JSONEq(t, `[
+		{"day_of_week":1,"meal_period":1,"cook_user_id":1,"cook_user_name":"Cook"},
+		{"day_of_week":1,"meal_period":2,"cook_user_id":null,"cook_user_name":null}
+	]`, w.Body.String())
+}
+
+// TestUpdateCookDefaultSchedulesIntegration verifies upsert of weekday defaults.
+func TestUpdateCookDefaultSchedulesIntegration(t *testing.T) {
+	cleanup := startPostgres(t)
+	defer cleanup()
+	seedCookUsers(t)
+
+	r := setupRouter()
+
+	put := func(body string) {
+		t.Helper()
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("PUT", "/api/cook-default-schedules", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		r.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Code)
+	}
+
+	get := func() string {
+		t.Helper()
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("GET", "/api/cook-default-schedules", nil)
+		r.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Code)
+		return w.Body.String()
+	}
+
+	// Insert Mon lunch = Cook
+	put(`[{"day_of_week":1,"meal_period":1,"cook_user_id":1}]`)
+	assert.JSONEq(t, `[{"day_of_week":1,"meal_period":1,"cook_user_id":1,"cook_user_name":"Cook"}]`, get())
+
+	// Overwrite Mon lunch to null (各自)
+	put(`[{"day_of_week":1,"meal_period":1,"cook_user_id":null}]`)
+	assert.JSONEq(t, `[{"day_of_week":1,"meal_period":1,"cook_user_id":null,"cook_user_name":null}]`, get())
+}
