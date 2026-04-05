@@ -9,8 +9,8 @@ services:
       - ./db/01_create_database.sql:/docker-entrypoint-initdb.d/01_create_database.sql
       - ./db/02_init_schema.sql:/docker-entrypoint-initdb.d/02_init_schema.sql
       - ./db/03_init_data.sql:/docker-entrypoint-initdb.d/03_init_data.sql
-    ports:
-      - "5432:5432"
+#    ports:
+#      - "5432:5432"
 
   backend:
     build: ./backend
